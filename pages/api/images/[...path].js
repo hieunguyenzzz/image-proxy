@@ -1,21 +1,20 @@
 import fs from 'fs'
 import path from 'path'
 import axios from 'axios';
-import url from 'url';
 
 export default async function handler(req, res) {
   const { path: imageFile } = req.query;
   const name = imageFile[imageFile.length - 1];
   const filePath = path.resolve('.', 'public/images/', ...imageFile);
 
- let imageUrl = 'https://res.cloudinary.com/' + imageFile.join('/');
+ let url = 'https://res.cloudinary.com/' + imageFile.join('/');
  
   if (!fs.existsSync(filePath)) {
-    console.log('downloading ' + imageUrl);
+    console.log('downloading' + url);
     try {
-      await downloadImage(imageUrl, filePath);
-    } catch (error) {
-      const parts = imageUrl.split("media/catalog/product");
+      await downloadImage(url, filePath);
+    } catch (err) {
+      const parts = url.split("media/catalog/product");
       const filename = parts[1];
       if (typeof filename != "undefined")  {
         let actualFile = 'https://static.mobelaris.com/media/catalog/product' + filename;
@@ -29,24 +28,19 @@ export default async function handler(req, res) {
         res.send(imageBuffer);
         return;
       }
-
     }
 
-    
-    
   }
 
-  
   const imageBuffer = fs.readFileSync(filePath)
 
   res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
   res.send(imageBuffer)
-
 }
 
-const downloadImage = async (imageUrl, filePath) => {
+const downloadImage = async (url, filePath) => {
   const response = await axios({
-    imageUrl,
+    url,
     responseType: 'stream',
   });
 
