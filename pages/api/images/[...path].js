@@ -16,7 +16,7 @@ export default async function handler(req, res) {
       await downloadImage(url, filePath);
     } catch (error) {
       console.log('some error happens');
-      const parsedUrl = url.parse(imageUrl);
+      const parsedUrl = url.parse(url);
       const pathname = parsedUrl.pathname;
       const imagePath = path.join(path.basename(pathname));
       console.log(imagePath); 
