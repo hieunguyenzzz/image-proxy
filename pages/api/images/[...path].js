@@ -11,11 +11,10 @@ export default async function handler(req, res) {
  let imageUrl = 'https://res.cloudinary.com/' + imageFile.join('/');
  
   if (!fs.existsSync(filePath)) {
-    console.log('downloading');
+    console.log('downloading ' + imageUrl);
     try {
       await downloadImage(imageUrl, filePath);
     } catch (error) {
-      console.log('some error happens');
       const parts = imageUrl.split("media/catalog/product");
       const filename = parts[1];
       let actualFile = 'https://static.mobelaris.com/media/catalog/product' + filename;
