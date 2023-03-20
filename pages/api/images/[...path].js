@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import axios from 'axios';
+import url from 'url';
 
 export default async function handler(req, res) {
   const { path: imageFile } = req.query;
@@ -11,7 +12,15 @@ export default async function handler(req, res) {
  
   if (!fs.existsSync(filePath)) {
     console.log('downloading');
-    await downloadImage(url, filePath);
+    try {
+      await downloadImage(url, filePath);
+    } catch (error) {
+      const parsedUrl = url.parse(imageUrl);
+      const pathname = parsedUrl.pathname;
+      const imagePath = path.join(path.basename(pathname));
+      console.log(imagePath); 
+    }
+    
   }
 
   const imageBuffer = fs.readFileSync(filePath)
