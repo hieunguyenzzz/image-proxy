@@ -14,19 +14,27 @@ export default async function handler(req, res) {
     console.log('downloading');
     try {
       await downloadImage(imageUrl, filePath);
+      const imageBuffer = fs.readFileSync(filePath)
+
+      res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
+      res.send(imageBuffer)
     } catch (error) {
       console.log('some error happens');
       const parts = imageUrl.split("media/catalog/product");
       const filename = parts[1];
-      console.log('https://static.mobelaris.com/media/catalog/' + filename);
+      let actualFile = 'https://static.mobelaris.com/media/catalog/product' + filename;
+      const imageResponse = await axios.get(actualFile, { responseType: 'arraybuffer' });
+      const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+
+      // Set the appropriate content-type for the image file
+      res.setHeader('Content-Type', 'image/jpeg');
+      
+      // Send the image file as response
+      res.send(imageBuffer);
     }
     
   }
 
-  const imageBuffer = fs.readFileSync(filePath)
-
-  res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
-  res.send(imageBuffer)
 }
 
 const downloadImage = async (imageUrl, filePath) => {
