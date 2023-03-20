@@ -16,10 +16,9 @@ export default async function handler(req, res) {
       await downloadImage(imageUrl, filePath);
     } catch (error) {
       console.log('some error happens');
-      const parsedUrl = url.parse(imageUrl);
-      const pathname = parsedUrl.pathname;
-      const imagePath = path.join(path.basename(pathname));
-      console.log(imagePath); 
+      const parts = imageUrl.split("media/catalog/product");
+      const filename = parts[1];
+      console.log('https://static.mobelaris.com/media/catalog/' + filename);
     }
     
   }
