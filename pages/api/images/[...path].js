@@ -8,15 +8,15 @@ export default async function handler(req, res) {
   const name = imageFile[imageFile.length - 1];
   const filePath = path.resolve('.', 'public/images/', ...imageFile);
 
- let url = 'https://res.cloudinary.com/' + imageFile.join('/');
+ let imageUrl = 'https://res.cloudinary.com/' + imageFile.join('/');
  
   if (!fs.existsSync(filePath)) {
     console.log('downloading');
     try {
-      await downloadImage(url, filePath);
+      await downloadImage(imageUrl, filePath);
     } catch (error) {
       console.log('some error happens');
-      const parsedUrl = url.parse(url);
+      const parsedUrl = url.parse(imageUrl);
       const pathname = parsedUrl.pathname;
       const imagePath = path.join(path.basename(pathname));
       console.log(imagePath); 
@@ -30,9 +30,9 @@ export default async function handler(req, res) {
   res.send(imageBuffer)
 }
 
-const downloadImage = async (url, filePath) => {
+const downloadImage = async (imageUrl, filePath) => {
   const response = await axios({
-    url,
+    imageUrl,
     responseType: 'stream',
   });
 
