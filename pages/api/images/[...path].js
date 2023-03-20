@@ -27,6 +27,7 @@ export default async function handler(req, res) {
       
       // Send the image file as response
       res.send(imageBuffer);
+      return;
     }
 
     
