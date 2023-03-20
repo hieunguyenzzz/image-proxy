@@ -17,16 +17,19 @@ export default async function handler(req, res) {
     } catch (error) {
       const parts = imageUrl.split("media/catalog/product");
       const filename = parts[1];
-      let actualFile = 'https://static.mobelaris.com/media/catalog/product' + filename;
-      const imageResponse = await axios.get(actualFile, { responseType: 'arraybuffer' });
-      const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+      if (typeof filename != "undefined")  {
+        let actualFile = 'https://static.mobelaris.com/media/catalog/product' + filename;
+        const imageResponse = await axios.get(actualFile, { responseType: 'arraybuffer' });
+        const imageBuffer = Buffer.from(imageResponse.data, 'binary');
 
-      // Set the appropriate content-type for the image file
-      res.setHeader('Content-Type', 'image/jpeg');
-      
-      // Send the image file as response
-      res.send(imageBuffer);
-      return;
+        // Set the appropriate content-type for the image file
+        res.setHeader('Content-Type', 'image/jpeg');
+
+        // Send the image file as response
+        res.send(imageBuffer);
+        return;
+      }
+
     }
 
     
