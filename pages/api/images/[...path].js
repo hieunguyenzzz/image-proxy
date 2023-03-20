@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   if (!fs.existsSync(filePath)) {
     console.log('downloading');
     try {
-      
+      await downloadImage(imageUrl, filePath);
     } catch (error) {
       console.log('some error happens');
       const parts = imageUrl.split("media/catalog/product");
@@ -34,7 +34,7 @@ export default async function handler(req, res) {
     
   }
 
-  await downloadImage(imageUrl, filePath);
+  
   const imageBuffer = fs.readFileSync(filePath)
 
   res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
