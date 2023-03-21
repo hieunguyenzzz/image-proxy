@@ -5,16 +5,22 @@ import axios from 'axios';
 export default async function handler(req, res) {
   const { path: imageFile } = req.query;
   const name = imageFile[imageFile.length - 1];
+  if (imageFile[3].includes('e_trim')) {
+    console.log('e_trim_ilation');
+    imageFile[3] = 'e_trim';
+  }
+  
   const filePath = path.resolve('.', 'public/images/', ...imageFile);
 
  let url = 'https://res.cloudinary.com/' + imageFile.join('/');
- 
-  url = url.replace(/e_trim[^.]+?\//, 'e_trim/')
+   
   if (!fs.existsSync(filePath)) {
     console.log('downloading ' + url);
     try {
       await downloadImage(url, filePath);
     } catch (err) {
+      console.log('can not download, process step 2');
+      console.log(err);
       const parts = url.split("media/catalog/product");
       const filename = parts[1];
       if (typeof filename != "undefined")  {
