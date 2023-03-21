@@ -15,13 +15,14 @@ export default async function handler(req, res) {
     if (!fs.existsSync(filePath)) {
 
         try {
-            if (imageFile[3].includes('e_trim')) {
-                console.log('e_trim_ilation');
-                imageFile[3] = 'e_trim';
-            }
+            // if (imageFile[3].includes('e_trim')) {
+            //     console.log('e_trim_ilation');
+            //     imageFile[3] = 'e_trim';
+            // }
 
             url = 'https://res.cloudinary.com/' + imageFile.join('/');
             console.log('downloading ' + url);
+            console.log(imageFile[3]);
             await downloadImage(url, filePath);
         } catch (err) {
             console.log('can not download ');
