@@ -7,11 +7,24 @@ export default async function handler(req, res) {
     const name = imageFile[imageFile.length - 1];
 
     if (name === 'no_selection') return;
+    let filePath = path.resolve('.', 'public/images/', ...imageFile);
+    console.log('filepath ' + filePath);
+    if (fs.existsSync(filePath)) {
+        console.log('serving the actual file');
+        const imageBuffer = fs.readFileSync(filePath)
+
+        res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
+        res.send(imageBuffer);
+        return;
+    }
+
     if (imageFile[3].includes('e_trim')) {
         console.log('e_trim_ilation');
         imageFile[3] = 'e_trim';
     }
-    const filePath = path.resolve('.', 'public/images/', ...imageFile);
+
+
+    filePath = path.resolve('.', 'public/images/', ...imageFile);
 
     let url = 'https://res.cloudinary.com/' + imageFile.join('/');
 
