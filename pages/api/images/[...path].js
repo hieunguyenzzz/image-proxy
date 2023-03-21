@@ -6,10 +6,9 @@ export default async function handler(req, res) {
     const {path: imageFile} = req.query;
     const name = imageFile[imageFile.length - 1];
 
-    if (name === 'no_selection') return;
+    if (name === 'no_selection' || name === 'undefined') return;
     let filePath = path.resolve('.', 'public/images/', ...imageFile);
     if (fs.existsSync(filePath)) {
-        console.log('serving the actual file ' , filePath);
         const imageBuffer = fs.readFileSync(filePath)
 
         res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
@@ -35,12 +34,13 @@ export default async function handler(req, res) {
             // }
 
             url = 'https://res.cloudinary.com/' + imageFile.join('/');
-            console.log('downloading ' + url);
+            
             await downloadImage(url, filePath);
+            console.log('https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=t-true');
         } catch (err) {
             console.log('can not download ');
             console.log(err);
-            await downloadImage('https://static.mobelaris.com/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/'),filePath);
+            await downloadImage('https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=t-true' ,filePath);
         }
 
     }
