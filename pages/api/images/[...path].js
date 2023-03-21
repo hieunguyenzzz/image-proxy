@@ -9,7 +9,7 @@ export default async function handler(req, res) {
 
  let url = 'https://res.cloudinary.com/' + imageFile.join('/');
  
-  url = url.replace(/e_trim[^.]+e_trim/, 'e_trim');  
+  url = url.replace(/e_trim[^.]+?\//, 'e_trim/')
   if (!fs.existsSync(filePath)) {
     console.log('downloading ' + url);
     try {
