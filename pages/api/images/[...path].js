@@ -5,41 +5,17 @@ import axios from 'axios';
 export default async function handler(req, res) {
   const { path: imageFile } = req.query;
   const name = imageFile[imageFile.length - 1];
-  if (imageFile[3].includes('e_trim')) {
-    console.log('e_trim_ilation');
-    imageFile[3] = 'e_trim';
-  }
-  
   const filePath = path.resolve('.', 'public/images/', ...imageFile);
 
  let url = 'https://res.cloudinary.com/' + imageFile.join('/');
-   
+ 
   if (!fs.existsSync(filePath)) {
     console.log('downloading ' + url);
     try {
       await downloadImage(url, filePath);
     } catch (err) {
-      console.log('can not download, process step 2');
+      console.log('can not download ');
       console.log(err);
-      const parts = url.split("media/catalog/product");
-      const filename = parts[1];
-      if (typeof filename != "undefined")  {
-        let actualFile = 'https://static.mobelaris.com/media/catalog/product' + filename;
-        try {
-          const imageResponse = await axios.get(actualFile, { responseType: 'arraybuffer' });
-          const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-
-          // Set the appropriate content-type for the image file
-          res.setHeader('Content-Type', 'image/jpeg');
-
-          // Send the image file as response
-          res.send(imageBuffer);
-          return;
-        } catch(err) {
-
-        }
-        
-      }
     }
 
   }
