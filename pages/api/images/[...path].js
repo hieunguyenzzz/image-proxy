@@ -19,7 +19,6 @@ export default async function handler(req, res) {
     }
 
     if (imageFile[3].includes('e_trim')) {
-        console.log('e_trim_ilation');
         imageFile[3] = 'e_trim';
     }
 
