@@ -9,6 +9,7 @@ export default async function handler(req, res) {
     if (name === 'no_selection' || name === 'undefined') return;
     let filePath = path.resolve('.', 'public/images/', ...imageFile);
     if (fs.existsSync(filePath)) {
+        console.log('loading actual file ');
         const imageBuffer = fs.readFileSync(filePath)
 
         res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
@@ -75,3 +76,14 @@ const downloadImage = async (url, filePath) => {
         stream.on('error', e => reject(e));
     });
 };
+
+const formatUrl = (url) => {
+    // get the width
+    let uri = url.replace(/http.+?product/, '');
+
+
+    const match = url.match(/w_(\d+)/);
+    if (match) {
+        const wValue = match[1];    
+    }
+}
