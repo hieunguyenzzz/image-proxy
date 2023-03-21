@@ -9,9 +9,8 @@ export default async function handler(req, res) {
 
  let url = 'https://res.cloudinary.com/' + imageFile.join('/');
  
- if (url.includes('e_trim,w_64,c_limit,q_auto,e_trim')) {
   url = url.replace('e_trim,w_64,c_limit,q_auto,e_trim', 'e_trim')
- }
+  url = url.replace('e_trim,w_1080,c_limit,q_auto,e_trim', 'e_trim')
   if (!fs.existsSync(filePath)) {
     console.log('downloading ' + url);
     try {
@@ -32,7 +31,7 @@ export default async function handler(req, res) {
           res.send(imageBuffer);
           return;
         } catch(err) {
-          
+
         }
         
       }
