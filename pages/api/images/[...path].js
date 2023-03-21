@@ -34,13 +34,20 @@ export default async function handler(req, res) {
             // }
 
             url = 'https://res.cloudinary.com/' + imageFile.join('/');
+            let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=t-true';
+            if (url.includes('e_trim')) {
+                await downloadImage(alternativeUrl, filePath);
+                console.log('downloading ' + alternativeUrl)
+            } else {
+                await downloadImage(url, filePath);
+                console.log('downloading ' + url)
+            }
             
-            await downloadImage(url, filePath);
-            console.log('https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=t-true');
+            
         } catch (err) {
             console.log('can not download ');
             console.log(err);
-            await downloadImage('https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=t-true' ,filePath);
+            //await downloadImage('https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=t-true' ,filePath);
         }
 
     }
