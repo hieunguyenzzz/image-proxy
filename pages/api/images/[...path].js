@@ -7,19 +7,21 @@ export default async function handler(req, res) {
     const name = imageFile[imageFile.length - 1];
 
     if (name === 'no_selection') return;
-    
+
     const filePath = path.resolve('.', 'public/images/', ...imageFile);
 
     let url = 'https://res.cloudinary.com/' + imageFile.join('/');
 
     if (!fs.existsSync(filePath)) {
-        console.log('downloading ' + url);
+
         try {
             if (imageFile[3].includes('e_trim')) {
                 console.log('e_trim_ilation');
                 imageFile[3] = 'e_trim';
             }
+
             url = 'https://res.cloudinary.com/' + imageFile.join('/');
+            console.log('downloading ' + url);
             await downloadImage(url, filePath);
         } catch (err) {
             console.log('can not download ');
