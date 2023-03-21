@@ -36,7 +36,6 @@ export default async function handler(req, res) {
 
             url = 'https://res.cloudinary.com/' + imageFile.join('/');
             console.log('downloading ' + url);
-            console.log(imageFile[3]);
             await downloadImage(url, filePath);
         } catch (err) {
             console.log('can not download ');
