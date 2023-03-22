@@ -17,7 +17,7 @@ export default async function handler(req, res) {
         return;
     }
 
-    if (imageFile[3].includes('e_trim')) {
+    if (imageFile[3].includes('e_trim') || imageFile[4].includes('media')) {
         imageFile[3] = 'e_trim';
     }
 
