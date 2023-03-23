@@ -9,7 +9,6 @@ export default async function handler(req, res) {
     if (name === 'no_selection' || name === 'undefined') return;
     let filePath = path.resolve('.', 'public/images/', ...imageFile);
     if (fs.existsSync(filePath)) {
-        console.log('loading actual file ');
         const imageBuffer = fs.readFileSync(filePath)
 
         res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
