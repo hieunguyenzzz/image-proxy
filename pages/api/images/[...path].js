@@ -32,7 +32,9 @@ export default async function handler(req, res) {
                 imagekitAttributes.push('w-' + number);
             }
         }
-        imageFile[3] = cloudinaryAttributes.join(',');
+        if (cloudinaryAttributes) {
+            imageFile[3] = cloudinaryAttributes.join(',');
+        }
     }
 
 
