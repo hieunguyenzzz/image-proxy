@@ -4,6 +4,8 @@ import axios from 'axios';
 
 export default async function handler(req, res) {
     const {path: imageFile} = req.query;
+    let cloudinaryAttributes = [];
+    let imagekitAttributes = [];
     const name = imageFile[imageFile.length - 1];
 
     if (name === 'no_selection' || name === 'undefined') return;
@@ -16,8 +18,21 @@ export default async function handler(req, res) {
         return;
     }
 
-    if (imageFile[3].includes('e_trim') || imageFile[4].includes('media')) {
-        imageFile[3] = 'e_trim';
+    if (imageFile[4].includes('media')) {
+        if (imageFile[3].includes('e_trim')) {
+            imagekitAttributes.push('t-true');
+            cloudinaryAttributes.push('e_trim');
+        }
+        if (imageFile[3].includes('w_')) {
+            const url = imageFile[3];
+            const match = url.match(/w_(\d+)/);
+            if (match) {
+                const number = parseInt(match[1], 10);
+                cloudinaryAttributes.push('w_' + number);
+                imagekitAttributes.push('w-' + number);
+            }
+        }
+        imageFile[3] = cloudinaryAttributes.join(',');
     }
 
 
@@ -34,8 +49,8 @@ export default async function handler(req, res) {
             // }
 
             url = 'https://res.cloudinary.com/' + imageFile.join('/');
-            let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=t-true';
-            if (url.includes('e_trim')) {
+            let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=' + imagekitAttributes.join(',');
+            if (imagekitAttributes.length > 0) {
                 await downloadImage(alternativeUrl, filePath);
                 console.log('downloading ' + alternativeUrl)
             } else {
