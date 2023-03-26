@@ -51,10 +51,16 @@ export default async function handler(req, res) {
             // }
 
             url = 'https://res.cloudinary.com/' + imageFile.join('/');
-            let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=' + imagekitAttributes.join(',');
-            if (imagekitAttributes.length > 0) {
-                await downloadImage(alternativeUrl, filePath);
-                console.log('downloading ' + alternativeUrl)
+            let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') ;
+            if (imageFile[4].includes('media')) {
+                if (imagekitAttributes.length > 0) {
+                    await downloadImage(alternativeUrl + '?tr=' + imagekitAttributes.join(','), filePath);
+                    console.log('downloading ' + alternativeUrl + '?tr=' + imagekitAttributes.join(','))
+                } else {
+                    await downloadImage(alternativeUrl, filePath);
+                    console.log('downloading ' + alternativeUrl)
+                }
+                
             } else {
                 await downloadImage(url, filePath);
                 console.log('downloading ' + url)
