@@ -18,7 +18,7 @@ export default async function handler(req, res) {
         return;
     }
 
-    if (imageFile[4].includes('media')) {
+    if (imageFile[4].includes('media') || imageFile[4].includes('mobelaris')) {
         if (imageFile[3].includes('e_trim')) {
             imagekitAttributes.push('t-true');
             cloudinaryAttributes.push('e_trim');
@@ -51,8 +51,9 @@ export default async function handler(req, res) {
             // }
 
             url = 'https://res.cloudinary.com/' + imageFile.join('/');
-            let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') ;
-            if (imageFile[4].includes('media')) {
+            
+            if (imageFile[4].includes('media') || imageFile[4].includes('mobelaris')) {
+                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') ;
                 if (imagekitAttributes.length > 0) {
                     await downloadImage(alternativeUrl + '?tr=' + imagekitAttributes.join(','), filePath);
                     console.log('downloading ' + alternativeUrl + '?tr=' + imagekitAttributes.join(','))
@@ -61,7 +62,10 @@ export default async function handler(req, res) {
                     console.log('downloading ' + alternativeUrl)
                 }
                 
-            } else {
+            } else if (imageFile[4].includes('uploads')) {
+                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5]].join('/') ;
+                await downloadImage(alternativeUrl, filePath);
+            } else  {
                 await downloadImage(url, filePath);
                 console.log('downloading ' + url)
             }
