@@ -50,19 +50,9 @@ export default async function handler(req, res) {
             //     imageFile[3] = 'e_trim';
             // }
 
-            url = 'https://res.cloudinary.com/' + imageFile.join('/');
+            url = 'https://res.cloudinary.com/' + imageFile.join('/').replace('dfgbpib38','duoygiyxp');
             
-            if (imageFile[4].includes('media') || imageFile[4].includes('mobelaris')) {
-                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') ;
-                if (imagekitAttributes.length > 0) {
-                    await downloadImage(alternativeUrl + '?tr=' + imagekitAttributes.join(','), filePath);
-                    console.log('downloading ' + alternativeUrl + '?tr=' + imagekitAttributes.join(','))
-                } else {
-                    await downloadImage(alternativeUrl, filePath);
-                    console.log('downloading ' + alternativeUrl)
-                }
-                
-            } else if (imageFile[4].includes('uploads')) {
+            if (imageFile[4].includes('uploads')) {
                 let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5]].join('/') ;
                 await downloadImage(alternativeUrl, filePath);
             } else if (imageFile[4].includes('wp-content')) {
