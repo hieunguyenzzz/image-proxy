@@ -65,6 +65,9 @@ export default async function handler(req, res) {
             } else if (imageFile[4].includes('uploads')) {
                 let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5]].join('/') ;
                 await downloadImage(alternativeUrl, filePath);
+            } else if (imageFile[4].includes('wp-content')) {
+                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + ['wpcontent' ,imageFile[5], imageFile[6], imageFile[7], imageFile[8]].join('/') ;
+                await downloadImage(alternativeUrl, filePath);
             } else  {
                 await downloadImage(url, filePath);
                 console.log('downloading ' + url)
