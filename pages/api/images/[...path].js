@@ -18,7 +18,7 @@ export default async function handler(req, res) {
         return;
     }
 
-    if (imageFile[4].includes('media') || imageFile[4].includes('mobelaris')) {
+    if (imageFile[4].includes('media') || imageFile[4].includes('mobelaris') || imageFile[4].includes('uploads')  || imageFile[4].includes('wp-content') ) {
         if (imageFile[3].includes('e_trim')) {
             imagekitAttributes.push('t-true');
             cloudinaryAttributes.push('e_trim');
@@ -53,10 +53,10 @@ export default async function handler(req, res) {
             url = 'https://res.cloudinary.com/' + imageFile.join('/').replace('dfgbpib38','duoygiyxp').replace('mobelaris/','');
             
             if (imageFile[4].includes('uploads')) {
-                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5]].join('/') ;
+                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5]].join('/') + '?tr=' + imagekitAttributes.join(',') ;
                 await downloadImage(alternativeUrl, filePath);
             } else if (imageFile[4].includes('wp-content')) {
-                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + ['wpcontent' ,imageFile[5], imageFile[6], imageFile[7], imageFile[8]].join('/') ;
+                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + ['wpcontent' ,imageFile[5], imageFile[6], imageFile[7], imageFile[8]].join('/') + '?tr=' + imagekitAttributes.join(',');
                 await downloadImage(alternativeUrl, filePath);
             } else  {
                 await downloadImage(url, filePath);
