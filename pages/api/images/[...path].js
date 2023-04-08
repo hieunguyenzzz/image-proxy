@@ -50,7 +50,7 @@ export default async function handler(req, res) {
             //     imageFile[3] = 'e_trim';
             // }
 
-            url = 'https://res.cloudinary.com/' + imageFile.join('/').replace('dfgbpib38','duoygiyxp').replace('mobelaris/','');
+            url = 'https://res.cloudinary.com/' + imageFile.join('/').replace('mobelaris/','');
             
             if (imageFile[4].includes('uploads')) {
                 let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5]].join('/') + '?tr=' + imagekitAttributes.join(',') ;
