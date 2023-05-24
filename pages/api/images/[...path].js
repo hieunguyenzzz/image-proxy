@@ -18,7 +18,7 @@ export default async function handler(req, res) {
         return;
     }
 
-    if (imageFile[4].includes('media') || imageFile[4].includes('mobelaris') || imageFile[4].includes('uploads')  || imageFile[4].includes('wp-content') ) {
+    if (imageFile[4].includes('media') || imageFile[4].includes('mobelaris') || imageFile[4].includes('uploads')  || imageFile[4].includes('wp-content') || imageFile[4].includes('e_trim') ) {
         if (imageFile[3].includes('e_trim')) {
             imagekitAttributes.push('t-true');
             cloudinaryAttributes.push('e_trim');
@@ -69,6 +69,11 @@ export default async function handler(req, res) {
                 await downloadImage(alternativeUrl.replace('/mobelaris/', ''), filePath);
                 
                 console.log('downloading ' + alternativeUrl.replace('/mobelaris/', ''));
+            } else if(imageFile[4].includes('e_trim')) {
+                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9],imageFile[10]].join('/') + '?tr=' + imagekitAttributes.join(',');
+                
+                await downloadImage(alternativeUrl, filePath);
+                console.log('downloading ' + alternativeUrl);
             } else {
                 await downloadImage(url, filePath);
                 console.log('downloading ' + url);
