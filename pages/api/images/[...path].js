@@ -75,11 +75,15 @@ export default async function handler(req, res) {
         }
 
     }
+    try {
+        const imageBuffer = fs.readFileSync(filePath)
 
-    const imageBuffer = fs.readFileSync(filePath)
-
-    res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
-    res.send(imageBuffer)
+        res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
+        res.send(imageBuffer)
+    } catch(err) {
+        console.log('file not exist ' + filePath);
+    }
+    
 }
 
 const downloadImage = async (url, filePath) => {
