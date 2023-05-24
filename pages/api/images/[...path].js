@@ -52,7 +52,7 @@ export default async function handler(req, res) {
 
             // url = 'https://res.cloudinary.com/' + imageFile.join('/').replace('mobelaris/','');
             url = 'https://res.cloudinary.com/' + imageFile.join('/');
-            console.log(imageFile[4]);
+            
             if (imageFile[4].includes('uploads')) {
                 let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5]].join('/') + '?tr=' + imagekitAttributes.join(',') ;
                 console.log(alternativeUrl);
