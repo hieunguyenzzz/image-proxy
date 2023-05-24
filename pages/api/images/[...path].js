@@ -63,7 +63,11 @@ export default async function handler(req, res) {
                 await downloadImage(alternativeUrl, filePath);
                 console.log('downloading ' + alternativeUrl)
             } else  {
-                await downloadImage(url, filePath);
+                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9],imageFile[10]].join('/') + '?tr=' + imagekitAttributes.join(',');
+                
+                // await downloadImage(url, filePath);
+                await downloadImage(alternativeUrl.replace('/mobelaris/', ''), filePath);
+                
                 console.log('downloading ' + url)
             }
             
