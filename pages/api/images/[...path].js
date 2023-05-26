@@ -69,11 +69,11 @@ export default async function handler(req, res) {
                 await downloadImage(alternativeUrl.replace('/mobelaris/', ''), filePath);
                 
                 console.log('downloading ' + alternativeUrl.replace('/mobelaris/', ''));
-            } else if(imageFile[4].includes('e_trim')) {
-                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9],imageFile[10]].join('/') + '?tr=' + imagekitAttributes.join(',');
+            // } else if(imageFile[4].includes('e_trim')) {
+            //     let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9],imageFile[10]].join('/') + '?tr=' + imagekitAttributes.join(',');
                 
-                await downloadImage(alternativeUrl, filePath);
-                console.log('downloading ' + alternativeUrl);
+            //     await downloadImage(alternativeUrl, filePath);
+            //     console.log('downloading ' + alternativeUrl);
             } else {
                 await downloadImage(url, filePath);
                 console.log('downloading ' + url);
