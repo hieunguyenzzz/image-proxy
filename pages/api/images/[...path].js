@@ -45,14 +45,11 @@ export default async function handler(req, res) {
     if (!fs.existsSync(filePath)) {
 
         try {
-            // if (imageFile[3].includes('e_trim')) {
-            //     console.log('e_trim_ilation');
-            //     imageFile[3] = 'e_trim';
-            // }
-
-            // url = 'https://res.cloudinary.com/' + imageFile.join('/').replace('mobelaris/','');
             url = 'https://res.cloudinary.com/' + imageFile.join('/');
-            
+            let imagePath = url.match(/media\/(.+)$/);
+            let widthPart = url.match(/w_(\d+)/);
+        
+
             if (imageFile[4].includes('uploads')) {
                 let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5]].join('/') + '?tr=' + imagekitAttributes.join(',') ;
                 console.log(alternativeUrl);
@@ -74,6 +71,10 @@ export default async function handler(req, res) {
                 
             //     await downloadImage(alternativeUrl, filePath);
             //     console.log('downloading ' + alternativeUrl);
+            } else if (imagePath && widthPart) {
+                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/media/' + imagePath[1] + '?tr=t-true,w-' + widthPart[1];
+                await downloadImage(alternativeUrl.replace('/mobelaris/', ''), filePath);
+                console.log('downloading ' + alternativeUrl);
             } else {
                 await downloadImage(url, filePath);
                 console.log('downloading ' + url);
