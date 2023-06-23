@@ -3,7 +3,8 @@ import path from 'path'
 import axios from 'axios';
 
 export default async function handler(req, res) {
-    const {path: imageFile} = req.query;
+    let {path: imageFile} = req.query;
+    imageFile = imageFile.filter(item => item !== 'mobelaris');
     let cloudinaryAttributes = [];
     let imagekitAttributes = [];
     const name = imageFile[imageFile.length - 1];
@@ -17,7 +18,6 @@ export default async function handler(req, res) {
         res.send(imageBuffer);
         return;
     }
-
     if (imageFile[4].includes('media') || imageFile[4].includes('mobelaris') || imageFile[4].includes('uploads')  || imageFile[4].includes('wp-content') || imageFile[4].includes('e_trim') ) {
         if (imageFile[3].includes('e_trim')) {
             imagekitAttributes.push('t-true');
