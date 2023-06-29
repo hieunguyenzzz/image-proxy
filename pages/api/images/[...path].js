@@ -76,6 +76,7 @@ export default async function handler(req, res) {
                 await downloadImage(alternativeUrl.replace('/mobelaris/', ''), filePath);
                 console.log('downloading ' + alternativeUrl);
             } else {
+                url = url.replace(',v', '/v'); // some urls are wrong like this e_trim,w_1440,c_limit,q_auto,v1686914328/ww13tv1trnbuqdxt48pv
                 await downloadImage(url, filePath);
                 console.log('downloading ' + url);
             }
