@@ -132,3 +132,9 @@ const formatUrl = (url) => {
         const wValue = match[1];    
     }
 }
+
+export const config = {
+    api: {
+      responseLimit: false,
+    },
+  }
