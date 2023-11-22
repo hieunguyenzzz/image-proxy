@@ -50,39 +50,39 @@ export default async function handler(req, res) {
             let widthPart = url.match(/w_(\d+)/);
         
 
-            if (imageFile[4].includes('uploads')) {
-                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5]].join('/') + '?tr=' + imagekitAttributes.join(',') ;
-                console.log(alternativeUrl);
-                await downloadImage(alternativeUrl, filePath);
-                console.log('downloading ' + alternativeUrl)
-            // } else if (imageFile[4].includes('wp-content')) {
-            //     let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + ['wpcontent' ,imageFile[5], imageFile[6], imageFile[7], imageFile[8]].join('/') + '?tr=' + imagekitAttributes.join(',');
+            // if (imageFile[4].includes('uploads')) {
+            //     let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5]].join('/') + '?tr=' + imagekitAttributes.join(',') ;
+            //     console.log(alternativeUrl);
             //     await downloadImage(alternativeUrl, filePath);
             //     console.log('downloading ' + alternativeUrl)
-            } else if (imageFile[4].includes('media'))  {
-                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=' + imagekitAttributes.join(',');
-                
-                // await downloadImage(url, filePath);
-                await downloadImage(alternativeUrl.replace('/mobelaris/', ''), filePath);
-                
-                console.log('downloading ' + alternativeUrl.replace('/mobelaris/', ''));
-            // } else if(imageFile[4].includes('e_trim')) {
-            //     let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9],imageFile[10]].join('/') + '?tr=' + imagekitAttributes.join(',');
-                
-            //     await downloadImage(alternativeUrl, filePath);
+            // // } else if (imageFile[4].includes('wp-content')) {
+            // //     let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + ['wpcontent' ,imageFile[5], imageFile[6], imageFile[7], imageFile[8]].join('/') + '?tr=' + imagekitAttributes.join(',');
+            // //     await downloadImage(alternativeUrl, filePath);
+            // //     console.log('downloading ' + alternativeUrl)
+            // } else if (imageFile[4].includes('media'))  {
+            //     let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=' + imagekitAttributes.join(',');
+            //
+            //     // await downloadImage(url, filePath);
+            //     await downloadImage(alternativeUrl.replace('/mobelaris/', ''), filePath);
+            //
+            //     console.log('downloading ' + alternativeUrl.replace('/mobelaris/', ''));
+            // // } else if(imageFile[4].includes('e_trim')) {
+            // //     let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9],imageFile[10]].join('/') + '?tr=' + imagekitAttributes.join(',');
+            //
+            // //     await downloadImage(alternativeUrl, filePath);
+            // //     console.log('downloading ' + alternativeUrl);
+            // } else if (imagePath && widthPart) {
+            //     let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/media/' + imagePath[1] + '?tr=t-true,w-' + widthPart[1];
+            //     await downloadImage(alternativeUrl.replace('/mobelaris/', ''), filePath);
             //     console.log('downloading ' + alternativeUrl);
-            } else if (imagePath && widthPart) {
-                let alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/media/' + imagePath[1] + '?tr=t-true,w-' + widthPart[1];
-                await downloadImage(alternativeUrl.replace('/mobelaris/', ''), filePath);
-                console.log('downloading ' + alternativeUrl);
-            } else {
+            // } else {
                 url = url.replace(',v', '/v'); // some urls are wrong like this e_trim,w_1440,c_limit,q_auto,v1686914328/ww13tv1trnbuqdxt48pv
                 // if (url.indexOf('swatchs')) {
                 //     return;
                 // }
                 await downloadImage(url, filePath);
-                console.log('downloading ' + url);
-            }
+            //     console.log('downloading ' + url);
+            // }
             
             
         } catch (err) {
