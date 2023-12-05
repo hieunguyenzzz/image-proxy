@@ -87,7 +87,6 @@ export default async function handler(req, res) {
             
         } catch (err) {
             console.log('can not download ' + url);
-            console.log(err);
             //await downloadImage('https://ik.imagekit.io/tg3wenekj/' + [imageFile[4] ,imageFile[5],imageFile[6],imageFile[7],imageFile[8],imageFile[9]].join('/') + '?tr=t-true' ,filePath);
         }
 
