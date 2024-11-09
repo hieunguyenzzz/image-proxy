@@ -13,8 +13,12 @@ export default async function handler(req, res) {
     let filePath = path.resolve('.', 'public/images/', ...imageFile);
     if (fs.existsSync(filePath)) {
         const imageBuffer = fs.readFileSync(filePath)
+        if (name.includes('webp')) {
+            res.setHeader('Content-Type', 'image/' + name.substring(name.length - 4))
+        } else {
+            res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
+        }
 
-        res.setHeader('Content-Type', 'image/' + name.substring(name.length - 3))
         res.send(imageBuffer);
         return;
     }
