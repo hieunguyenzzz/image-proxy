@@ -18,6 +18,8 @@ const s3 = new S3Client({
 const BUCKET = process.env.MINIO_BUCKET || 'imageproxy-cache';
 const CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const KNOWN_WIDTHS = [64, 100, 128, 200, 384, 600, 800, 1024, 1080, 1200, 1440];
+const CONTENT_PATHS = ['media', 'uploads', 'wp-content', 'swatchs'];
+const TRANSFORM_RE = /^[a-z]_|^[a-z]+_[a-z]+|^f_|^c_|^q_|^v\d/;
 
 const getContentType = (name) => {
     if (name.includes('.webp')) return 'image/webp';
@@ -31,6 +33,36 @@ const sanitizePath = (segments) => {
     return segments
         .filter(s => s !== '..' && s !== '.' && !s.includes('..') && s.length > 0)
         .map(s => s.replace(/[<>:"|?*]/g, ''));
+};
+
+// Normalize path: collapse transform segments between "upload/" and content path
+// e.g. ["upload", "e_trim", "w_256", "f_auto", "media", ...] -> ["upload", "e_trim,w_256,f_auto", "media", ...]
+const normalizePath = (segments) => {
+    const uploadIdx = segments.indexOf('upload');
+    if (uploadIdx === -1) return segments;
+
+    const before = segments.slice(0, uploadIdx + 1);
+    const after = segments.slice(uploadIdx + 1);
+
+    const transforms = [];
+    let contentStart = 0;
+    for (let i = 0; i < after.length; i++) {
+        // If this segment is a known content path, stop
+        if (CONTENT_PATHS.includes(after[i])) {
+            contentStart = i;
+            break;
+        }
+        // If segment contains commas, it's already collapsed transforms — split and collect
+        const parts = after[i].split(',');
+        transforms.push(...parts);
+        contentStart = i + 1;
+    }
+
+    const content = after.slice(contentStart);
+    if (transforms.length > 0 && content.length > 0) {
+        return [...before, transforms.join(','), ...content];
+    }
+    return segments;
 };
 
 const objectExists = async (key) => {
@@ -63,6 +95,14 @@ const downloadImage = async (url) => {
     return Buffer.from(await res.arrayBuffer());
 };
 
+const serveFromMinIO = async (key, contentType) => {
+    const { body } = await getObject(key);
+    const nodeStream = body instanceof Readable ? body : Readable.fromWeb(body);
+    return new Response(nodeStream, {
+        headers: { 'Content-Type': contentType, 'Cache-Control': CACHE_CONTROL },
+    });
+};
+
 // Health check
 app.get('/', (c) => c.text('imageproxy ok'));
 
@@ -79,57 +119,42 @@ app.get('/api/images/*', async (c) => {
 
     const contentType = getContentType(name);
 
-    // Build CDN URL with transformation mapping (must happen before cache check
-    // because the old cache used transformed paths)
-    let cloudinaryAttributes = [];
-    let imagekitAttributes = [];
-    const segment4 = imageFile[4] || '';
-    const segment3 = imageFile[3] || '';
+    // Normalize: collapse transform segments into single comma-separated segment
+    const normalized = normalizePath(imageFile);
+    const objectKey = normalized.join('/');
 
-    if (segment4.includes('media') || segment4.includes('mobelaris') || segment4.includes('uploads') || segment4.includes('wp-content') || segment4.includes('e_trim')) {
-        if (segment3.includes('e_trim')) {
-            imagekitAttributes.push('t-true');
-            cloudinaryAttributes.push('e_trim');
-        }
-        if (segment3.includes('w_')) {
-            const match = segment3.match(/w_(\d+)/);
-            if (match) {
-                const number = parseInt(match[1], 10);
-                cloudinaryAttributes.push('w_' + number);
-                imagekitAttributes.push('w-' + number);
+    // Also try the raw (un-normalized) key in case it was cached that way
+    const rawKey = imageFile.join('/');
+
+    // Check MinIO cache (try normalized first, then raw)
+    for (const key of [objectKey, rawKey]) {
+        try {
+            if (await objectExists(key)) {
+                return await serveFromMinIO(key, contentType);
             }
-        }
-        if (cloudinaryAttributes.length > 0 && imageFile.length > 3) {
-            imageFile[3] = cloudinaryAttributes.join(',');
+        } catch (e) {
+            console.log('MinIO read error for ' + key);
         }
     }
 
-    // Cache key uses the transformed path (matches old filesystem cache structure)
-    const objectKey = imageFile.join('/');
+    // Build CDN URL and ImageKit attributes from the normalized transforms
+    const uploadIdx = normalized.indexOf('upload');
+    const transformSegment = uploadIdx !== -1 ? (normalized[uploadIdx + 1] || '') : '';
+    const imagekitAttributes = [];
+    if (transformSegment.includes('e_trim')) imagekitAttributes.push('t-true');
+    const wMatch = transformSegment.match(/w_(\d+)/);
+    if (wMatch) imagekitAttributes.push('w-' + wMatch[1]);
 
-    // Check MinIO cache
-    try {
-        if (await objectExists(objectKey)) {
-            const { body } = await getObject(objectKey);
-            const nodeStream = body instanceof Readable ? body : Readable.fromWeb(body);
-            return new Response(nodeStream, {
-                headers: {
-                    'Content-Type': contentType,
-                    'Cache-Control': CACHE_CONTROL,
-                },
-            });
-        }
-    } catch (e) {
-        console.log('MinIO read error, falling through to CDN');
-    }
+    // Detect ImageKit uploads path
+    const contentStart = uploadIdx !== -1 ? uploadIdx + 2 : 3;
+    const firstContentSegment = normalized[contentStart] || '';
 
-    // Download from CDN
-    let url = 'https://res.cloudinary.com/' + imageFile.join('/');
+    let url = 'https://res.cloudinary.com/' + normalized.join('/');
     let imageBuffer = null;
 
     try {
-        if (segment4.includes('uploads') && imageFile.length > 5) {
-            const alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [imageFile[4], imageFile[5]].join('/') + '?tr=' + imagekitAttributes.join(',');
+        if (firstContentSegment === 'uploads' && normalized.length > contentStart + 2) {
+            const alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [normalized[contentStart], normalized[contentStart + 1]].join('/') + '?tr=' + imagekitAttributes.join(',');
             console.log('downloading ' + alternativeUrl);
             imageBuffer = await downloadImage(alternativeUrl);
         } else {
@@ -146,42 +171,28 @@ app.get('/api/images/*', async (c) => {
         const widthMatch = objectKey.match(/w_(\d+)/);
         if (widthMatch) {
             const requestedWidth = parseInt(widthMatch[1], 10);
-            // Sort known widths by closeness (prefer larger over smaller)
             const sorted = [...KNOWN_WIDTHS]
                 .filter(w => w !== requestedWidth)
                 .sort((a, b) => {
                     const diffA = Math.abs(a - requestedWidth);
                     const diffB = Math.abs(b - requestedWidth);
-                    if (diffA === diffB) return b - a; // prefer larger
+                    if (diffA === diffB) return b - a;
                     return diffA - diffB;
                 });
 
-            // Extract the image path after transformation segments
-            // e.g. "dfgbpib38/image/upload/e_trim/w_856/media/..." -> base="dfgbpib38/image/upload", imagePath="media/..."
             const parts = objectKey.split('/');
-            const uploadIdx = parts.indexOf('upload');
-            if (uploadIdx !== -1) {
-                const base = parts.slice(0, uploadIdx + 1).join('/');
-                // Find where the actual image path starts (first segment that's not a transform)
-                let imagePathStart = uploadIdx + 1;
-                while (imagePathStart < parts.length && /^[a-z0-9_,]+$/.test(parts[imagePathStart]) && !['media', 'uploads', 'wp-content', 'swatchs'].includes(parts[imagePathStart])) {
-                    imagePathStart++;
-                }
-                const imagePath = parts.slice(imagePathStart).join('/');
+            const upIdx = parts.indexOf('upload');
+            if (upIdx !== -1) {
+                const base = parts.slice(0, upIdx + 1).join('/');
+                let imgStart = upIdx + 2; // skip transform segment
+                const imagePath = parts.slice(imgStart).join('/');
 
                 for (const w of sorted) {
                     const fallbackKey = base + '/e_trim,w_' + w + '/' + imagePath;
                     try {
                         if (await objectExists(fallbackKey)) {
                             console.log('fallback ' + objectKey + ' -> ' + fallbackKey);
-                            const { body } = await getObject(fallbackKey);
-                            const nodeStream = body instanceof Readable ? body : Readable.fromWeb(body);
-                            return new Response(nodeStream, {
-                                headers: {
-                                    'Content-Type': contentType,
-                                    'Cache-Control': CACHE_CONTROL,
-                                },
-                            });
+                            return await serveFromMinIO(fallbackKey, contentType);
                         }
                     } catch {}
                 }
@@ -190,7 +201,7 @@ app.get('/api/images/*', async (c) => {
         return c.text('Image not found', 404);
     }
 
-    // Upload to MinIO in background
+    // Upload to MinIO in background (use normalized key)
     putObject(objectKey, imageBuffer, contentType).catch(err => {
         console.log('MinIO upload error for ' + objectKey, err.message);
     });
