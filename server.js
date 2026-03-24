@@ -17,6 +17,7 @@ const s3 = new S3Client({
 
 const BUCKET = process.env.MINIO_BUCKET || 'imageproxy-cache';
 const CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const KNOWN_WIDTHS = [64, 100, 128, 200, 384, 600, 800, 1024, 1080, 1200, 1440];
 
 const getContentType = (name) => {
     if (name.includes('.webp')) return 'image/webp';
@@ -140,7 +141,54 @@ app.get('/api/images/*', async (c) => {
         console.log('can not download ' + url);
     }
 
-    if (!imageBuffer) return c.text('Image not found', 404);
+    // If CDN download failed, try closest cached width
+    if (!imageBuffer) {
+        const widthMatch = objectKey.match(/w_(\d+)/);
+        if (widthMatch) {
+            const requestedWidth = parseInt(widthMatch[1], 10);
+            // Sort known widths by closeness (prefer larger over smaller)
+            const sorted = [...KNOWN_WIDTHS]
+                .filter(w => w !== requestedWidth)
+                .sort((a, b) => {
+                    const diffA = Math.abs(a - requestedWidth);
+                    const diffB = Math.abs(b - requestedWidth);
+                    if (diffA === diffB) return b - a; // prefer larger
+                    return diffA - diffB;
+                });
+
+            // Extract the image path after transformation segments
+            // e.g. "dfgbpib38/image/upload/e_trim/w_856/media/..." -> base="dfgbpib38/image/upload", imagePath="media/..."
+            const parts = objectKey.split('/');
+            const uploadIdx = parts.indexOf('upload');
+            if (uploadIdx !== -1) {
+                const base = parts.slice(0, uploadIdx + 1).join('/');
+                // Find where the actual image path starts (first segment that's not a transform)
+                let imagePathStart = uploadIdx + 1;
+                while (imagePathStart < parts.length && /^[a-z0-9_,]+$/.test(parts[imagePathStart]) && !['media', 'uploads', 'wp-content', 'swatchs'].includes(parts[imagePathStart])) {
+                    imagePathStart++;
+                }
+                const imagePath = parts.slice(imagePathStart).join('/');
+
+                for (const w of sorted) {
+                    const fallbackKey = base + '/e_trim,w_' + w + '/' + imagePath;
+                    try {
+                        if (await objectExists(fallbackKey)) {
+                            console.log('fallback ' + objectKey + ' -> ' + fallbackKey);
+                            const { body } = await getObject(fallbackKey);
+                            const nodeStream = body instanceof Readable ? body : Readable.fromWeb(body);
+                            return new Response(nodeStream, {
+                                headers: {
+                                    'Content-Type': contentType,
+                                    'Cache-Control': CACHE_CONTROL,
+                                },
+                            });
+                        }
+                    } catch {}
+                }
+            }
+        }
+        return c.text('Image not found', 404);
+    }
 
     // Upload to MinIO in background
     putObject(objectKey, imageBuffer, contentType).catch(err => {
