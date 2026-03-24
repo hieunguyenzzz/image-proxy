@@ -180,26 +180,35 @@ app.get('/api/images/*', async (c) => {
                 return diffA - diffB;
             });
 
+        // Build transform prefixes to try: with and without e_trim
+        const hasETrim = otherTransforms.includes('e_trim');
+        const prefixSets = [otherTransforms];
+        if (!hasETrim) prefixSets.push([...otherTransforms, 'e_trim']);
+
         for (const w of widthsToTry) {
-            const tryTransforms = [...otherTransforms, 'w_' + w];
-            const fallbackKey = parsed.base + '/' + tryTransforms.join(',') + '/' + parsed.contentPath;
-            try {
-                if (await objectExists(fallbackKey)) {
-                    console.log('serving nearest cached: ' + fallbackKey);
-                    return await serveFromMinIO(fallbackKey, contentType);
-                }
-            } catch {}
+            for (const prefix of prefixSets) {
+                const tryTransforms = [...prefix, 'w_' + w].sort();
+                const fallbackKey = parsed.base + '/' + tryTransforms.join(',') + '/' + parsed.contentPath;
+                try {
+                    if (await objectExists(fallbackKey)) {
+                        console.log('serving nearest cached: ' + fallbackKey);
+                        return await serveFromMinIO(fallbackKey, contentType);
+                    }
+                } catch {}
+            }
         }
 
-        // Also try with just otherTransforms (no width) — e.g. e_trim only
-        if (otherTransforms.length > 0) {
-            const noWidthKey = parsed.base + '/' + otherTransforms.join(',') + '/' + parsed.contentPath;
-            try {
-                if (await objectExists(noWidthKey)) {
-                    console.log('serving nearest cached: ' + noWidthKey);
-                    return await serveFromMinIO(noWidthKey, contentType);
-                }
-            } catch {}
+        // Also try with just otherTransforms (no width)
+        for (const prefix of prefixSets) {
+            if (prefix.length > 0) {
+                const noWidthKey = parsed.base + '/' + prefix.join(',') + '/' + parsed.contentPath;
+                try {
+                    if (await objectExists(noWidthKey)) {
+                        console.log('serving nearest cached: ' + noWidthKey);
+                        return await serveFromMinIO(noWidthKey, contentType);
+                    }
+                } catch {}
+            }
         }
     }
 
