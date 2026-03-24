@@ -161,6 +161,45 @@ app.get('/api/images/*', async (c) => {
         } catch {}
     }
 
+    // Before hitting CDN, try closest cached width in MinIO
+    if (parsed && parsed.contentPath) {
+        const widthTransform = parsed.transforms.find(t => /^w_\d+$/.test(t));
+        const otherTransforms = parsed.transforms.filter(t => !/^w_\d+$/.test(t));
+        const requestedWidth = widthTransform ? parseInt(widthTransform.match(/\d+/)[0], 10) : 0;
+
+        // Sort: prefer larger widths (better quality downscaled), then by closeness
+        const widthsToTry = [...KNOWN_WIDTHS]
+            .filter(w => w !== requestedWidth)
+            .sort((a, b) => {
+                const diffA = Math.abs(a - requestedWidth);
+                const diffB = Math.abs(b - requestedWidth);
+                if (diffA === diffB) return b - a;
+                return diffA - diffB;
+            });
+
+        for (const w of widthsToTry) {
+            const tryTransforms = [...otherTransforms, 'w_' + w];
+            const fallbackKey = parsed.base + '/' + tryTransforms.join(',') + '/' + parsed.contentPath;
+            try {
+                if (await objectExists(fallbackKey)) {
+                    console.log('serving nearest cached: ' + fallbackKey);
+                    return await serveFromMinIO(fallbackKey, contentType);
+                }
+            } catch {}
+        }
+
+        // Also try with just otherTransforms (no width) — e.g. e_trim only
+        if (otherTransforms.length > 0) {
+            const noWidthKey = parsed.base + '/' + otherTransforms.join(',') + '/' + parsed.contentPath;
+            try {
+                if (await objectExists(noWidthKey)) {
+                    console.log('serving nearest cached: ' + noWidthKey);
+                    return await serveFromMinIO(noWidthKey, contentType);
+                }
+            } catch {}
+        }
+    }
+
     // Build CDN URL from the comma-joined normalized form
     const primaryKey = keys[0];
     const imagekitAttributes = [];
@@ -188,36 +227,6 @@ app.get('/api/images/*', async (c) => {
         }
     } catch (err) {
         console.log('can not download ' + url);
-    }
-
-    // If CDN download failed, try closest cached width
-    if (!imageBuffer && parsed) {
-        const widthTransform = parsed.transforms.find(t => /^w_\d+$/.test(t));
-        if (widthTransform) {
-            const requestedWidth = parseInt(widthTransform.match(/\d+/)[0], 10);
-            const sorted = [...KNOWN_WIDTHS]
-                .filter(w => w !== requestedWidth)
-                .sort((a, b) => {
-                    const diffA = Math.abs(a - requestedWidth);
-                    const diffB = Math.abs(b - requestedWidth);
-                    if (diffA === diffB) return b - a;
-                    return diffA - diffB;
-                });
-
-            // Try each width with comma-joined format
-            const otherTransforms = parsed.transforms.filter(t => !/^w_\d+$/.test(t));
-            for (const w of sorted) {
-                const newTransforms = [...otherTransforms, 'w_' + w].sort();
-                const fallbackKey = parsed.base + '/' + newTransforms.join(',') + '/' + parsed.contentPath;
-                try {
-                    if (await objectExists(fallbackKey)) {
-                        console.log('fallback -> ' + fallbackKey);
-                        return await serveFromMinIO(fallbackKey, contentType);
-                    }
-                } catch {}
-            }
-        }
-        return c.text('Image not found', 404);
     }
 
     if (!imageBuffer) return c.text('Image not found', 404);
