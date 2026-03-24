@@ -76,26 +76,10 @@ app.get('/api/images/*', async (c) => {
     const name = imageFile[imageFile.length - 1];
     if (name === 'no_selection' || name === 'undefined') return c.text('Invalid image', 400);
 
-    const objectKey = imageFile.join('/');
     const contentType = getContentType(name);
 
-    // Check MinIO cache
-    try {
-        if (await objectExists(objectKey)) {
-            const { body } = await getObject(objectKey);
-            const nodeStream = body instanceof Readable ? body : Readable.fromWeb(body);
-            return new Response(nodeStream, {
-                headers: {
-                    'Content-Type': contentType,
-                    'Cache-Control': CACHE_CONTROL,
-                },
-            });
-        }
-    } catch (e) {
-        console.log('MinIO read error, falling through to CDN');
-    }
-
-    // Build CDN URL with transformation mapping
+    // Build CDN URL with transformation mapping (must happen before cache check
+    // because the old cache used transformed paths)
     let cloudinaryAttributes = [];
     let imagekitAttributes = [];
     const segment4 = imageFile[4] || '';
@@ -119,6 +103,26 @@ app.get('/api/images/*', async (c) => {
         }
     }
 
+    // Cache key uses the transformed path (matches old filesystem cache structure)
+    const objectKey = imageFile.join('/');
+
+    // Check MinIO cache
+    try {
+        if (await objectExists(objectKey)) {
+            const { body } = await getObject(objectKey);
+            const nodeStream = body instanceof Readable ? body : Readable.fromWeb(body);
+            return new Response(nodeStream, {
+                headers: {
+                    'Content-Type': contentType,
+                    'Cache-Control': CACHE_CONTROL,
+                },
+            });
+        }
+    } catch (e) {
+        console.log('MinIO read error, falling through to CDN');
+    }
+
+    // Download from CDN
     let url = 'https://res.cloudinary.com/' + imageFile.join('/');
     let imageBuffer = null;
 
