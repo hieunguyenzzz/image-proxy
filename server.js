@@ -90,12 +90,19 @@ const generateKeys = (parsed, rawSegments) => {
 };
 
 const objectExists = async (key) => {
-    try {
-        await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
-        return true;
-    } catch {
-        return false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
+            return true;
+        } catch (e) {
+            // NotFound means object doesn't exist — no retry
+            if (e.name === 'NotFound' || e.$metadata?.httpStatusCode === 404) return false;
+            // Network error — retry once
+            if (attempt === 0) continue;
+            return false;
+        }
     }
+    return false;
 };
 
 const getObject = async (key) => {
@@ -226,6 +233,16 @@ app.get('/api/images/*', async (c) => {
     });
 });
 
+// Warm up S3 connection before accepting requests
+const warmup = async () => {
+    try {
+        await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: '__warmup__' }));
+    } catch {}
+    console.log('S3 connection ready');
+};
+
 const port = parseInt(process.env.PORT || '3000');
-console.log(`Starting image proxy on port ${port}`);
-serve({ fetch: app.fetch, port });
+warmup().then(() => {
+    console.log(`Starting image proxy on port ${port}`);
+    serve({ fetch: app.fetch, port });
+});
