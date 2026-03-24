@@ -68,7 +68,7 @@ app.get('/', (c) => c.text('imageproxy ok'));
 
 // Image proxy route
 app.get('/api/images/*', async (c) => {
-    let imageFile = c.req.path.replace('/api/images/', '').split('/');
+    let imageFile = decodeURIComponent(c.req.path).replace('/api/images/', '').split('/');
     imageFile = imageFile.filter(item => item !== 'mobelaris');
     imageFile = sanitizePath(imageFile);
 
