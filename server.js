@@ -180,13 +180,21 @@ app.get('/api/images/*', async (c) => {
                 return diffA - diffB;
             });
 
-        // Build transform prefixes to try: with and without e_trim
-        const hasETrim = otherTransforms.includes('e_trim');
-        const prefixSets = [otherTransforms];
-        if (!hasETrim) prefixSets.push([...otherTransforms, 'e_trim']);
+        // Build transform prefixes to try variations
+        // Strip non-essential Cloudinary hints (f_auto, c_limit, q_auto etc.)
+        const coreTransforms = otherTransforms.filter(t => !(/^f_|^c_|^q_/.test(t)));
+        const hasETrim = coreTransforms.includes('e_trim');
+        const prefixSets = new Set();
+        prefixSets.add(otherTransforms.sort().join('|'));
+        prefixSets.add(coreTransforms.sort().join('|'));
+        if (!hasETrim) {
+            prefixSets.add([...otherTransforms, 'e_trim'].sort().join('|'));
+            prefixSets.add([...coreTransforms, 'e_trim'].sort().join('|'));
+        }
+        const prefixArrays = [...prefixSets].map(s => s ? s.split('|') : []);
 
         for (const w of widthsToTry) {
-            for (const prefix of prefixSets) {
+            for (const prefix of prefixArrays) {
                 const tryTransforms = [...prefix, 'w_' + w].sort();
                 const fallbackKey = parsed.base + '/' + tryTransforms.join(',') + '/' + parsed.contentPath;
                 try {
@@ -199,7 +207,7 @@ app.get('/api/images/*', async (c) => {
         }
 
         // Also try with just otherTransforms (no width)
-        for (const prefix of prefixSets) {
+        for (const prefix of prefixArrays) {
             if (prefix.length > 0) {
                 const noWidthKey = parsed.base + '/' + prefix.join(',') + '/' + parsed.contentPath;
                 try {
