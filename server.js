@@ -214,19 +214,25 @@ app.get('/api/images/*', async (c) => {
     let url = 'https://res.cloudinary.com/' + primaryKey;
     let imageBuffer = null;
 
+    // Try Cloudinary first, then ImageKit for uploads/ paths
+    url = url.replace(',v', '/v');
     try {
-        if (parsed && parsed.contentPath.startsWith('uploads/')) {
-            const uploadParts = parsed.contentPath.split('/');
-            const alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [uploadParts[0], uploadParts[1]].join('/') + '?tr=' + imagekitAttributes.join(',');
-            console.log('downloading ' + alternativeUrl);
-            imageBuffer = await downloadImage(alternativeUrl);
-        } else {
-            url = url.replace(',v', '/v');
-            console.log('downloading ' + url);
-            imageBuffer = await downloadImage(url);
-        }
+        console.log('downloading ' + url);
+        imageBuffer = await downloadImage(url);
     } catch (err) {
-        console.log('can not download ' + url);
+        // If Cloudinary fails and path starts with uploads/, try ImageKit
+        if (parsed && parsed.contentPath.startsWith('uploads/')) {
+            try {
+                const uploadParts = parsed.contentPath.split('/');
+                const alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [uploadParts[0], uploadParts[1]].join('/') + '?tr=' + imagekitAttributes.join(',');
+                console.log('fallback to imagekit: ' + alternativeUrl);
+                imageBuffer = await downloadImage(alternativeUrl);
+            } catch (err2) {
+                console.log('can not download ' + url);
+            }
+        } else {
+            console.log('can not download ' + url);
+        }
     }
 
     if (!imageBuffer) return c.text('Image not found', 404);
