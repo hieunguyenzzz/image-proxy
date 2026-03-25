@@ -16,6 +16,8 @@ const s3 = new S3Client({
 });
 
 const BUCKET = process.env.MINIO_BUCKET || 'imageproxy-cache';
+const MINIO_HOST = (process.env.MINIO_ENDPOINT || 'https://minio-api.hieunguyen.dev').replace('https://', '');
+const THUMBOR_URL = process.env.THUMBOR_URL || 'https://thumbor.merakiweddingplanner.com';
 const CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const KNOWN_WIDTHS = [64, 100, 128, 200, 256, 384, 512, 600, 640, 800, 856, 1024, 1080, 1200, 1440];
 const CONTENT_PATHS = new Set(['media', 'uploads', 'wp-content', 'swatchs']);
@@ -134,6 +136,20 @@ const serveFromMinIO = async (key, contentType) => {
     });
 };
 
+// Resize a cached MinIO image via Thumbor, cache the result, and return the buffer
+const resizeViaThumborAndCache = async (sourceKey, width, targetKey, contentType) => {
+    const thumborUrl = `${THUMBOR_URL}/unsafe/${width}x0/${MINIO_HOST}/${BUCKET}/${sourceKey}`;
+    console.log('thumbor resize: ' + sourceKey + ' -> ' + width + 'px');
+    const res = await fetch(thumborUrl);
+    if (!res.ok) throw new Error(`Thumbor ${res.status}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    // Cache the resized version in MinIO
+    putObject(targetKey, buffer, contentType).catch(err => {
+        console.log('MinIO upload error for ' + targetKey, err.message);
+    });
+    return buffer;
+};
+
 // Health check
 app.get('/', (c) => c.text('imageproxy ok'));
 
@@ -164,7 +180,7 @@ app.get('/api/images/*', async (c) => {
         } catch {}
     }
 
-    // Before hitting CDN, try closest cached width in MinIO
+    // Before hitting CDN, find ANY cached version in MinIO and resize via Thumbor
     if (parsed && parsed.contentPath) {
         const widthTransform = parsed.transforms.find(t => /^w_\d+$/.test(t));
         const otherTransforms = parsed.transforms.filter(t => !/^w_\d+$/.test(t));
@@ -181,7 +197,6 @@ app.get('/api/images/*', async (c) => {
             });
 
         // Build transform prefixes to try variations
-        // Strip non-essential Cloudinary hints (f_auto, c_limit, q_auto etc.)
         const coreTransforms = otherTransforms.filter(t => !(/^f_|^c_|^q_/.test(t)));
         const hasETrim = coreTransforms.includes('e_trim');
         const prefixSets = new Set();
@@ -193,40 +208,49 @@ app.get('/api/images/*', async (c) => {
         }
         const prefixArrays = [...prefixSets].map(s => s ? s.split('|') : []);
 
+        // Find any cached version (different width, different transforms, or bare)
+        let foundKey = null;
+
         for (const w of widthsToTry) {
             for (const prefix of prefixArrays) {
                 const tryTransforms = [...prefix, 'w_' + w].sort();
                 const fallbackKey = parsed.base + '/' + tryTransforms.join(',') + '/' + parsed.contentPath;
-                try {
-                    if (await objectExists(fallbackKey)) {
-                        console.log('serving nearest cached: ' + fallbackKey);
-                        return await serveFromMinIO(fallbackKey, contentType);
-                    }
-                } catch {}
+                try { if (await objectExists(fallbackKey)) { foundKey = fallbackKey; break; } } catch {}
+            }
+            if (foundKey) break;
+        }
+
+        // Try without width
+        if (!foundKey) {
+            for (const prefix of prefixArrays) {
+                if (prefix.length > 0) {
+                    const noWidthKey = parsed.base + '/' + prefix.join(',') + '/' + parsed.contentPath;
+                    try { if (await objectExists(noWidthKey)) { foundKey = noWidthKey; break; } } catch {}
+                }
             }
         }
 
-        // Also try with just otherTransforms (no width)
-        for (const prefix of prefixArrays) {
-            if (prefix.length > 0) {
-                const noWidthKey = parsed.base + '/' + prefix.join(',') + '/' + parsed.contentPath;
-                try {
-                    if (await objectExists(noWidthKey)) {
-                        console.log('serving nearest cached: ' + noWidthKey);
-                        return await serveFromMinIO(noWidthKey, contentType);
-                    }
-                } catch {}
-            }
+        // Try bare path
+        if (!foundKey) {
+            const bareKey = parsed.base + '/' + parsed.contentPath;
+            try { if (await objectExists(bareKey)) foundKey = bareKey; } catch {}
         }
 
-        // Last resort: try bare path with no transforms at all
-        const bareKey = parsed.base + '/' + parsed.contentPath;
-        try {
-            if (await objectExists(bareKey)) {
-                console.log('serving nearest cached: ' + bareKey);
-                return await serveFromMinIO(bareKey, contentType);
+        if (foundKey) {
+            const primaryKey = keys[0];
+            // If width requested, resize via Thumbor and cache the correct size
+            if (requestedWidth > 0) {
+                try {
+                    const buffer = await resizeViaThumborAndCache(foundKey, requestedWidth, primaryKey, contentType);
+                    return c.body(buffer, 200, { 'Content-Type': contentType, 'Cache-Control': CACHE_CONTROL });
+                } catch (e) {
+                    console.log('Thumbor resize failed, serving cached as-is');
+                    return await serveFromMinIO(foundKey, contentType);
+                }
             }
-        } catch {}
+            // No width requested — serve cached version as-is
+            return await serveFromMinIO(foundKey, contentType);
+        }
     }
 
     // Build CDN URL from the comma-joined normalized form
