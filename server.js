@@ -218,6 +218,15 @@ app.get('/api/images/*', async (c) => {
                 } catch {}
             }
         }
+
+        // Last resort: try bare path with no transforms at all
+        const bareKey = parsed.base + '/' + parsed.contentPath;
+        try {
+            if (await objectExists(bareKey)) {
+                console.log('serving nearest cached: ' + bareKey);
+                return await serveFromMinIO(bareKey, contentType);
+            }
+        } catch {}
     }
 
     // Build CDN URL from the comma-joined normalized form
