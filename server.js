@@ -187,10 +187,11 @@ app.get('/api/images/*', async (c) => {
         const otherTransforms = parsed.transforms.filter(t => !/^w_\d+$/.test(t));
         const requestedWidth = widthTransform ? parseInt(widthTransform.match(/\d+/)[0], 10) : 0;
 
-        // Sort: prefer larger widths (better quality downscaled), then by closeness
+        // Sort: if no width requested, prefer largest; otherwise prefer closest (larger first)
         const widthsToTry = [...KNOWN_WIDTHS]
             .filter(w => w !== requestedWidth)
             .sort((a, b) => {
+                if (requestedWidth === 0) return b - a; // no width: largest first
                 const diffA = Math.abs(a - requestedWidth);
                 const diffB = Math.abs(b - requestedWidth);
                 if (diffA === diffB) return b - a;
