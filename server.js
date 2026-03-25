@@ -137,9 +137,10 @@ const serveFromMinIO = async (key, contentType) => {
 };
 
 // Resize a cached MinIO image via Thumbor, cache the result, and return the buffer
-const resizeViaThumborAndCache = async (sourceKey, width, targetKey, contentType) => {
-    const thumborUrl = `${THUMBOR_URL}/unsafe/${width}x0/${MINIO_HOST}/${BUCKET}/${sourceKey}`;
-    console.log('thumbor resize: ' + sourceKey + ' -> ' + width + 'px');
+const resizeViaThumborAndCache = async (sourceKey, width, targetKey, contentType, trim = false) => {
+    const trimPart = trim ? 'trim/' : '';
+    const thumborUrl = `${THUMBOR_URL}/unsafe/${trimPart}${width}x0/${MINIO_HOST}/${BUCKET}/${sourceKey}`;
+    console.log('thumbor ' + (trim ? 'trim+resize' : 'resize') + ': ' + sourceKey + ' -> ' + width + 'px');
     const res = await fetch(thumborUrl);
     if (!res.ok) throw new Error(`Thumbor ${res.status}`);
     const buffer = Buffer.from(await res.arrayBuffer());
@@ -238,13 +239,14 @@ app.get('/api/images/*', async (c) => {
 
         if (foundKey) {
             const primaryKey = keys[0];
-            // If width requested, resize via Thumbor and cache the correct size
+            const needsTrim = parsed.transforms.includes('e_trim');
+            // If width requested, resize (and trim if needed) via Thumbor
             if (requestedWidth > 0) {
                 try {
-                    const buffer = await resizeViaThumborAndCache(foundKey, requestedWidth, primaryKey, contentType);
+                    const buffer = await resizeViaThumborAndCache(foundKey, requestedWidth, primaryKey, contentType, needsTrim);
                     return c.body(buffer, 200, { 'Content-Type': contentType, 'Cache-Control': CACHE_CONTROL });
                 } catch (e) {
-                    console.log('Thumbor resize failed, serving cached as-is');
+                    console.log('Thumbor failed, serving cached as-is');
                     return await serveFromMinIO(foundKey, contentType);
                 }
             }
