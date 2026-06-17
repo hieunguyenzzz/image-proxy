@@ -1,9 +1,16 @@
 const { Hono } = require('hono');
 const { serve } = require('@hono/node-server');
 const { S3Client, HeadObjectCommand, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { NodeHttpHandler } = require('@smithy/node-http-handler');
 const { Readable } = require('stream');
+const http = require('http');
+const https = require('https');
 
 const app = new Hono();
+
+// Outbound CDN/Thumbor fetches must be bounded too — a hung upstream otherwise
+// keeps the request open until Cloudflare gives up (524).
+const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '20000', 10);
 
 const s3 = new S3Client({
     endpoint: process.env.MINIO_ENDPOINT,
@@ -13,6 +20,16 @@ const s3 = new S3Client({
         secretAccessKey: process.env.MINIO_SECRET_KEY,
     },
     forcePathStyle: true,
+    // Bound every MinIO request and lift the 50-socket default. Without timeouts a
+    // single hung MinIO connection holds its socket forever; the pool fills and all
+    // subsequent S3 calls queue indefinitely (the exhaustion outage on 2026-06-17,
+    // ~71k requests enqueued at capacity=50). Timeouts let stuck sockets recycle.
+    requestHandler: new NodeHttpHandler({
+        connectionTimeout: parseInt(process.env.S3_CONNECTION_TIMEOUT_MS || '5000', 10),
+        requestTimeout: parseInt(process.env.S3_REQUEST_TIMEOUT_MS || '30000', 10),
+        httpAgent: new http.Agent({ keepAlive: true, maxSockets: 256 }),
+        httpsAgent: new https.Agent({ keepAlive: true, maxSockets: 256 }),
+    }),
 });
 
 const BUCKET = process.env.MINIO_BUCKET || 'imageproxy-cache';
@@ -123,7 +140,7 @@ const putObject = async (key, buffer, contentType) => {
 };
 
 const downloadImage = async (url) => {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
 };
@@ -141,7 +158,7 @@ const resizeViaThumborAndCache = async (sourceKey, width, targetKey, contentType
     const trimPart = trim ? 'trim/' : '';
     const thumborUrl = `${THUMBOR_URL}/unsafe/${trimPart}${width}x0/${MINIO_HOST}/${BUCKET}/${sourceKey}`;
     console.log('thumbor ' + (trim ? 'trim+resize' : 'resize') + ': ' + sourceKey + ' -> ' + width + 'px');
-    const res = await fetch(thumborUrl);
+    const res = await fetch(thumborUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`Thumbor ${res.status}`);
     const buffer = Buffer.from(await res.arrayBuffer());
     // Cache the resized version in MinIO
