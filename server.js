@@ -8,20 +8,20 @@ const https = require('https');
 
 const app = new Hono();
 
-// Outbound CDN/Thumbor fetches must be bounded too — a hung upstream otherwise
+// Outbound CDN fetches must be bounded too — a hung upstream otherwise
 // keeps the request open until Cloudflare gives up (524).
 const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '20000', 10);
 
 const s3 = new S3Client({
-    endpoint: process.env.MINIO_ENDPOINT,
-    region: 'us-east-1',
+    endpoint: process.env.R2_ENDPOINT,
+    region: 'auto',
     credentials: {
-        accessKeyId: process.env.MINIO_ACCESS_KEY,
-        secretAccessKey: process.env.MINIO_SECRET_KEY,
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
     },
     forcePathStyle: true,
-    // Bound every MinIO request and lift the 50-socket default. Without timeouts a
-    // single hung MinIO connection holds its socket forever; the pool fills and all
+    // Bound every cache request and lift the 50-socket default. Without timeouts a
+    // single hung connection holds its socket forever; the pool fills and all
     // subsequent S3 calls queue indefinitely (the exhaustion outage on 2026-06-17,
     // ~71k requests enqueued at capacity=50). Timeouts let stuck sockets recycle.
     requestHandler: new NodeHttpHandler({
@@ -32,11 +32,8 @@ const s3 = new S3Client({
     }),
 });
 
-const BUCKET = process.env.MINIO_BUCKET || 'imageproxy-cache';
-const MINIO_HOST = (process.env.MINIO_ENDPOINT || 'https://minio-api.hieunguyen.dev').replace('https://', '');
-const THUMBOR_URL = process.env.THUMBOR_URL || 'https://thumbor.merakiweddingplanner.com';
+const BUCKET = process.env.R2_BUCKET || 'imageproxy-cache';
 const CACHE_CONTROL = 'public, max-age=31536000, immutable';
-const KNOWN_WIDTHS = [64, 100, 128, 200, 256, 384, 512, 600, 640, 800, 856, 1024, 1080, 1200, 1440];
 const CONTENT_PATHS = new Set(['media', 'uploads', 'wp-content', 'swatchs']);
 
 const getContentType = (name) => {
@@ -80,7 +77,7 @@ const parsePath = (segments) => {
     return { base, transforms, contentPath };
 };
 
-// Generate all key variants to check in MinIO
+// Generate all key variants to check in the cache bucket
 const generateKeys = (parsed, rawSegments) => {
     if (!parsed) return [rawSegments.join('/')];
 
@@ -145,7 +142,7 @@ const downloadImage = async (url) => {
     return Buffer.from(await res.arrayBuffer());
 };
 
-const serveFromMinIO = async (key, contentType) => {
+const serveFromCache = async (key, contentType) => {
     const { body } = await getObject(key);
     const nodeStream = body instanceof Readable ? body : Readable.fromWeb(body);
     return new Response(nodeStream, {
@@ -153,19 +150,31 @@ const serveFromMinIO = async (key, contentType) => {
     });
 };
 
-// Resize a cached MinIO image via Thumbor, cache the result, and return the buffer
-const resizeViaThumborAndCache = async (sourceKey, width, targetKey, contentType, trim = false) => {
-    const trimPart = trim ? 'trim/' : '';
-    const thumborUrl = `${THUMBOR_URL}/unsafe/${trimPart}${width}x0/${MINIO_HOST}/${BUCKET}/${sourceKey}`;
-    console.log('thumbor ' + (trim ? 'trim+resize' : 'resize') + ': ' + sourceKey + ' -> ' + width + 'px');
-    const res = await fetch(thumborUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!res.ok) throw new Error(`Thumbor ${res.status}`);
-    const buffer = Buffer.from(await res.arrayBuffer());
-    // Cache the resized version in MinIO
-    putObject(targetKey, buffer, contentType).catch(err => {
-        console.log('MinIO upload error for ' + targetKey, err.message);
-    });
-    return buffer;
+// Build the Cloudinary delivery URL.
+//
+// Cloudinary applies every operation inside a single transformation component
+// together, resizing BEFORE trimming. So `e_trim,w_1024` scales to 1024px and
+// *then* crops the whitespace away, returning far less than the requested width
+// (measured: 445px for ch25-black-natural-2, 262px for `e_trim,w_600`). Giving
+// e_trim its own leading component forces trim -> resize, which is the order the
+// incoming request path already asked for, and returns the true width.
+//
+// The remaining transforms must stay comma-joined in one component: splitting
+// `c_limit` away from `w_856` drops the limit and lets Cloudinary upscale past
+// the original (measured 856px vs the correct 834px).
+const buildCloudinaryUrl = (parsed, rawSegments) => {
+    if (!parsed) return 'https://res.cloudinary.com/' + rawSegments.join('/');
+
+    const { base, transforms, contentPath } = parsed;
+    const version = transforms.find(t => /^v\d+$/.test(t));
+    const rest = transforms.filter(t => t !== 'e_trim' && !/^v\d+$/.test(t));
+
+    const components = [];
+    if (transforms.includes('e_trim')) components.push('e_trim');
+    if (rest.length > 0) components.push(rest.join(','));
+    if (version) components.push(version);
+
+    return 'https://res.cloudinary.com/' + [base, ...components, contentPath].join('/');
 };
 
 // Health check
@@ -189,91 +198,20 @@ app.get('/api/images/*', async (c) => {
     const parsed = parsePath(imageFile);
     const keys = generateKeys(parsed, imageFile);
 
-    // Check MinIO cache — try all key variants
+    // Check R2 cache — try all key variants
     for (const key of keys) {
         try {
             if (await objectExists(key)) {
-                return await serveFromMinIO(key, contentType);
+                return await serveFromCache(key, contentType);
             }
         } catch {}
     }
 
-    // Before hitting CDN, find ANY cached version in MinIO and resize via Thumbor
-    if (parsed && parsed.contentPath) {
-        const widthTransform = parsed.transforms.find(t => /^w_\d+$/.test(t));
-        const otherTransforms = parsed.transforms.filter(t => !/^w_\d+$/.test(t));
-        const requestedWidth = widthTransform ? parseInt(widthTransform.match(/\d+/)[0], 10) : 0;
-
-        // Sort: if no width requested, prefer largest; otherwise prefer closest (larger first)
-        const widthsToTry = [...KNOWN_WIDTHS]
-            .filter(w => w !== requestedWidth)
-            .sort((a, b) => {
-                if (requestedWidth === 0) return b - a; // no width: largest first
-                const diffA = Math.abs(a - requestedWidth);
-                const diffB = Math.abs(b - requestedWidth);
-                if (diffA === diffB) return b - a;
-                return diffA - diffB;
-            });
-
-        // Build transform prefixes to try variations
-        const coreTransforms = otherTransforms.filter(t => !(/^f_|^c_|^q_/.test(t)));
-        const hasETrim = coreTransforms.includes('e_trim');
-        const prefixSets = new Set();
-        prefixSets.add(otherTransforms.sort().join('|'));
-        prefixSets.add(coreTransforms.sort().join('|'));
-        if (!hasETrim) {
-            prefixSets.add([...otherTransforms, 'e_trim'].sort().join('|'));
-            prefixSets.add([...coreTransforms, 'e_trim'].sort().join('|'));
-        }
-        const prefixArrays = [...prefixSets].map(s => s ? s.split('|') : []);
-
-        // Find any cached version (different width, different transforms, or bare)
-        let foundKey = null;
-
-        for (const w of widthsToTry) {
-            for (const prefix of prefixArrays) {
-                const tryTransforms = [...prefix, 'w_' + w].sort();
-                const fallbackKey = parsed.base + '/' + tryTransforms.join(',') + '/' + parsed.contentPath;
-                try { if (await objectExists(fallbackKey)) { foundKey = fallbackKey; break; } } catch {}
-            }
-            if (foundKey) break;
-        }
-
-        // Try without width
-        if (!foundKey) {
-            for (const prefix of prefixArrays) {
-                if (prefix.length > 0) {
-                    const noWidthKey = parsed.base + '/' + prefix.join(',') + '/' + parsed.contentPath;
-                    try { if (await objectExists(noWidthKey)) { foundKey = noWidthKey; break; } } catch {}
-                }
-            }
-        }
-
-        // Try bare path
-        if (!foundKey) {
-            const bareKey = parsed.base + '/' + parsed.contentPath;
-            try { if (await objectExists(bareKey)) foundKey = bareKey; } catch {}
-        }
-
-        if (foundKey) {
-            const primaryKey = keys[0];
-            const needsTrim = parsed.transforms.includes('e_trim');
-            // If width requested, resize (and trim if needed) via Thumbor
-            if (requestedWidth > 0) {
-                try {
-                    const buffer = await resizeViaThumborAndCache(foundKey, requestedWidth, primaryKey, contentType, needsTrim);
-                    return c.body(buffer, 200, { 'Content-Type': contentType, 'Cache-Control': CACHE_CONTROL });
-                } catch (e) {
-                    console.log('Thumbor failed, serving cached as-is');
-                    return await serveFromMinIO(foundKey, contentType);
-                }
-            }
-            // No width requested — serve cached version as-is
-            return await serveFromMinIO(foundKey, contentType);
-        }
-    }
-
-    // Build CDN URL from the comma-joined normalized form
+    // Cache miss — render from Cloudinary. Never derive a new size from an
+    // already-derived cache entry: doing that upscaled thumbnails (a w_600 built
+    // from a 200px copy) and the result was cached immutable for a year, then
+    // reused as the source for other widths. Cloudinary always renders from the
+    // full original, so every miss is a clean render.
     const primaryKey = keys[0];
     const imagekitAttributes = [];
     if (parsed) {
@@ -284,11 +222,10 @@ app.get('/api/images/*', async (c) => {
         }
     }
 
-    let url = 'https://res.cloudinary.com/' + primaryKey;
+    const url = buildCloudinaryUrl(parsed, imageFile);
     let imageBuffer = null;
 
     // Try Cloudinary first, then ImageKit for uploads/ paths
-    url = url.replace(',v', '/v');
     try {
         console.log('downloading ' + url);
         imageBuffer = await downloadImage(url);
@@ -310,9 +247,9 @@ app.get('/api/images/*', async (c) => {
 
     if (!imageBuffer) return c.text('Image not found', 404);
 
-    // Upload to MinIO using comma-joined key (canonical format going forward)
+    // Cache in R2 using the comma-joined key (canonical format)
     putObject(primaryKey, imageBuffer, contentType).catch(err => {
-        console.log('MinIO upload error for ' + primaryKey, err.message);
+        console.log('R2 upload error for ' + primaryKey, err.message);
     });
 
     return c.body(imageBuffer, 200, {
