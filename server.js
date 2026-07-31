@@ -50,6 +50,15 @@ const sanitizePath = (segments) => {
         .map(s => s.replace(/[<>:"|?*]/g, ''));
 };
 
+// Cloudinary-native assets have no media/ or swatchs/ marker — they look like
+// `v1686913543/jetszl8qr9eytk9fmoke.png` (or just the public ID). Without these
+// checks the version and the filename get swallowed into the transform list and
+// the content path comes out empty, producing a URL Cloudinary rejects with 400.
+const isVersion = (s) => /^v\d+$/.test(s);
+// Comma-joined segments are transform groups, never filenames — guard against a
+// group like `e_trim,w_64,x.png` being mistaken for the start of the asset path.
+const isAssetFile = (s) => !s.includes(',') && /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(s);
+
 // Parse path into { base, transforms[], contentPath }
 // Input: ['dfgbpib38', 'image', 'upload', 'e_trim', 'w_200', 'f_auto', 'media', 'catalog', ...]
 // Output: { base: 'dfgbpib38/image/upload', transforms: ['e_trim', 'w_200', 'f_auto'], contentPath: 'media/catalog/...' }
@@ -64,7 +73,7 @@ const parsePath = (segments) => {
     let contentStart = 0;
 
     for (let i = 0; i < rest.length; i++) {
-        if (CONTENT_PATHS.has(rest[i])) {
+        if (CONTENT_PATHS.has(rest[i]) || isVersion(rest[i]) || isAssetFile(rest[i])) {
             contentStart = i;
             break;
         }
@@ -166,13 +175,11 @@ const buildCloudinaryUrl = (parsed, rawSegments) => {
     if (!parsed) return 'https://res.cloudinary.com/' + rawSegments.join('/');
 
     const { base, transforms, contentPath } = parsed;
-    const version = transforms.find(t => /^v\d+$/.test(t));
-    const rest = transforms.filter(t => t !== 'e_trim' && !/^v\d+$/.test(t));
+    const rest = transforms.filter(t => t !== 'e_trim');
 
     const components = [];
     if (transforms.includes('e_trim')) components.push('e_trim');
     if (rest.length > 0) components.push(rest.join(','));
-    if (version) components.push(version);
 
     return 'https://res.cloudinary.com/' + [base, ...components, contentPath].join('/');
 };
@@ -245,7 +252,14 @@ app.get('/api/images/*', async (c) => {
         }
     }
 
-    if (!imageBuffer) return c.text('Image not found', 404);
+    // Keep failures out of the CDN for more than a moment. This response carried no
+    // Cache-Control, so the zone's default browser TTL (8 days) applied and a single
+    // transient Cloudinary blip pinned a working image to a 404 for over a week.
+    // Short TTL rather than no-store: genuinely absent assets (missing swatches) are
+    // requested constantly, and no-store would send every one of those to Cloudinary.
+    if (!imageBuffer) {
+        return c.text('Image not found', 404, { 'Cache-Control': 'public, max-age=60' });
+    }
 
     // Cache in R2 using the comma-joined key (canonical format)
     putObject(primaryKey, imageBuffer, contentType).catch(err => {
