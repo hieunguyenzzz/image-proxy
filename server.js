@@ -33,7 +33,13 @@ const s3 = new S3Client({
 });
 
 const BUCKET = process.env.R2_BUCKET || 'imageproxy-cache';
-const CACHE_CONTROL = 'public, max-age=31536000, immutable';
+// The bytes at a given URL never change, so the edge copy keeps the full year —
+// Cloudflare prefers s-maxage for edge TTL, so offload is unchanged. The browser
+// copy is capped at a day and drops `immutable` because it is the one layer we
+// cannot purge: two separate bugs shipped wrong bytes under correct URLs, and
+// `immutable` tells browsers not to revalidate even on an explicit reload, which
+// left users with no way to recover.
+const CACHE_CONTROL = 'public, max-age=86400, s-maxage=31536000';
 const CONTENT_PATHS = new Set(['media', 'uploads', 'wp-content', 'swatchs']);
 
 const getContentType = (name) => {
