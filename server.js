@@ -190,6 +190,22 @@ const buildCloudinaryUrl = (parsed, rawSegments) => {
     return 'https://res.cloudinary.com/' + [base, ...components, contentPath].join('/');
 };
 
+// Instagram gallery photos predating the Cloudinary uploads live only behind the
+// legacy feed proxy — they are in no Cloudinary account, so the Cloudinary upstream
+// would 404 them. Their bytes were copied into this bucket under
+// `instagram/<postId>.jpg` (original) and `instagram/w600/<postId>.jpg` (the largest
+// size any component renders), so in practice every request is a cache hit. This
+// upstream only fires for a postId that was never seeded — a newly added gallery row
+// — and keeps it from serving a 404 instead of a photo. Note there is no resizing
+// here, so a self-healed `w600` key holds the full-size original.
+const instagramUpstream = (segments) => {
+    if (segments[0] !== 'instagram') return null;
+    const postId = segments[segments.length - 1].replace(/\.[a-z0-9]+$/i, '');
+    if (!/^\d+$/.test(postId)) return null;
+    return 'https://shopify-app-instagram-feed.mobelaris.com/instagram-image'
+        + `?postId=${postId}&username=mobelarisfurniture`;
+};
+
 // Health check
 app.get('/', (c) => c.text('imageproxy ok'));
 
@@ -235,7 +251,7 @@ app.get('/api/images/*', async (c) => {
         }
     }
 
-    const url = buildCloudinaryUrl(parsed, imageFile);
+    const url = instagramUpstream(imageFile) || buildCloudinaryUrl(parsed, imageFile);
     let imageBuffer = null;
 
     // Try Cloudinary first, then ImageKit for uploads/ paths
