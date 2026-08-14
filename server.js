@@ -193,17 +193,31 @@ const buildCloudinaryUrl = (parsed, rawSegments) => {
 // Instagram gallery photos predating the Cloudinary uploads live only behind the
 // legacy feed proxy — they are in no Cloudinary account, so the Cloudinary upstream
 // would 404 them. Their bytes were copied into this bucket under
-// `instagram/<postId>.jpg` (original) and `instagram/w600/<postId>.jpg` (the largest
+// `<prefix>/<postId>.jpg` (original) and `<prefix>/w600/<postId>.jpg` (the largest
 // size any component renders), so in practice every request is a cache hit. This
 // upstream only fires for a postId that was never seeded — a newly added gallery row
 // — and keeps it from serving a 404 instead of a photo. Note there is no resizing
 // here, so a self-healed `w600` key holds the full-size original.
+//
+// The prefix picks the Instagram account, because this proxy serves both brands off
+// one bucket and the same postId space: `instagram/` is Mobelaris, `instagram-de/` is
+// DesignerEditions. Both fetch from the *mobelaris* feed host on purpose — the service
+// is multi-tenant (it takes the account as a query param) and the DE-branded host
+// `shopify-app-instagram-feed.designereditions.com` has been returning 504.
+const INSTAGRAM_ACCOUNTS = {
+    'instagram': 'mobelarisfurniture',
+    'instagram-de': 'designer_editions_uk',
+};
 const instagramUpstream = (segments) => {
-    if (segments[0] !== 'instagram') return null;
+    const username = INSTAGRAM_ACCOUNTS[segments[0]];
+    if (!username) return null;
     const postId = segments[segments.length - 1].replace(/\.[a-z0-9]+$/i, '');
-    if (!/^\d+$/.test(postId)) return null;
+    // Numeric post ids plus the handful of named assets (e.g. `icon`, the profile
+    // avatar). sanitizePath has already stripped traversal, so this only has to keep
+    // the query param well-formed.
+    if (!/^[A-Za-z0-9_-]+$/.test(postId)) return null;
     return 'https://shopify-app-instagram-feed.mobelaris.com/instagram-image'
-        + `?postId=${postId}&username=mobelarisfurniture`;
+        + `?postId=${postId}&username=${username}`;
 };
 
 // Health check
