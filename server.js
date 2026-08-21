@@ -223,11 +223,30 @@ const canRenderLocally = (transforms) => transforms.every(t => LOCAL_TRANSFORMS.
 // request path asked for, and the reverse crops the whitespace away after the
 // resize and returns far less than the requested width.
 //
-// `withoutEnlargement` is what keeps this safe. c_limit means exactly that, and
-// never upscaling is what stops a repeat of the incident where a w_600 built from
-// a 200px copy was cached immutable for a year. f_auto is a no-op: toBuffer()
-// keeps the source format, and the Content-Type is derived from the extension
-// anyway, so the two stay consistent.
+// `withoutEnlargement` tracks c_limit and nothing else, because that is precisely
+// what c_limit means. Without c_limit Cloudinary *does* upscale past the original,
+// so we must too: many product shots are a portrait subject on a wide white canvas,
+// so e_trim leaves something like 641x849 out of a 1920x850 original, and the live
+// site requests e_trim,w_1440 of it. Refusing to enlarge would quietly start
+// serving 641px where 1440px is cached today — a visible regression on the same URL.
+// Measured on media/catalog/product/1/0/109_1.png: Cloudinary 1440x1907, trimmed
+// original 641x849, identical aspect ratio.
+//
+// This does not reopen the upscaling incident that CLAUDE.md warns about. That was
+// chained derivation — a w_600 built from an already-derived 200px cache entry, then
+// reused as a source. Here the source is always the mirrored full original.
+//
+// f_auto is a no-op: toBuffer() keeps the source format, and the Content-Type is
+// derived from the extension anyway, so the two stay consistent.
+//
+// The requested width always comes out exact, but the trim box is not identical to
+// Cloudinary's on alpha PNGs whose subject fades to transparent at the canvas edge:
+// sharp trims those rows, Cloudinary keeps them. Measured spread on real assets is
+// 0.1%-12% of height (0v8a3233.png: 1440x1848 local vs 1440x1931 Cloudinary). The
+// default trim() is the closest available — threshold 0, an explicit white
+// background and pre-flattening were all measured worse. This only affects renders
+// that Cloudinary would otherwise have produced fresh; entries already cached are
+// served untouched, so nothing currently on the site changes.
 const transformLocally = async (buffer, transforms) => {
     let bytes = buffer;
     if (transforms.includes('e_trim')) {
@@ -236,7 +255,7 @@ const transformLocally = async (buffer, transforms) => {
     const width = transforms.map(t => t.match(/^w_(\d+)$/)).find(Boolean);
     if (!width) return bytes;
     return sharp(bytes, { failOn: 'none' })
-        .resize({ width: parseInt(width[1], 10), withoutEnlargement: true })
+        .resize({ width: parseInt(width[1], 10), withoutEnlargement: transforms.includes('c_limit') })
         .toBuffer();
 };
 

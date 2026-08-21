@@ -56,10 +56,25 @@ falls through to Cloudinary on purpose. Silently ignoring an unrecognised transf
 would cache a wrong render under a correct URL, which is how both previous
 wrong-bytes incidents happened.
 
-`withoutEnlargement` is always set (that is exactly what `c_limit` means), so a local
-render can never upscale — same guarantee as the note below about never deriving a
-size from an existing cache entry. Local rendering derives only from the full
-original, never from a derived entry.
+`withoutEnlargement` tracks `c_limit` and nothing else, because that is what `c_limit`
+means. Without it Cloudinary upscales past the original and so must the local path —
+many product shots are a portrait subject on a 1920x850 white canvas, so `e_trim`
+leaves roughly 641x849 and the live site asks for `e_trim,w_1440` of that. Refusing to
+enlarge would serve 641px where 1440px is cached today. This is not the upscaling
+incident described below: that was *chained* derivation from an already-derived
+thumbnail, whereas local rendering always reads the mirrored full original.
+
+Known fidelity gap: the width always comes out exact, but sharp's trim box differs
+from `e_trim` on alpha PNGs whose subject fades to transparent at the canvas edge —
+sharp trims those rows, Cloudinary keeps them, giving 0.1%–12% less height (measured
+`0v8a3233.png`: 1440x1848 local vs 1440x1931 Cloudinary; roughly a third of sampled
+`e_trim` assets differ). `trim()`'s default is the closest option available: threshold
+0, an explicit white background and pre-flattening all measured worse. Because
+already-cached entries are served untouched, this changes nothing currently on the
+site — it only applies to renders Cloudinary would otherwise have produced fresh.
+If exact parity is ever needed, the full-size `e_trim` cache entries hold Cloudinary's
+own trim output and could be used as the resize source — but that would mean deriving
+from a cache entry, which the rule below forbids, so it needs a deliberate decision.
 
 `e_trim` runs as its own sharp pass before the resize, for the same reason
 `buildCloudinaryUrl` gives it its own transformation component: trim → resize is what
