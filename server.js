@@ -65,6 +65,13 @@ const isVersion = (s) => /^v\d+$/.test(s);
 // Comma-joined segments are transform groups, never filenames — guard against a
 // group like `e_trim,w_64,x.png` being mistaken for the start of the asset path.
 const isAssetFile = (s) => !s.includes(',') && /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(s);
+// Cloudinary transform tokens are always `<flag>_<value>` — w_600, e_trim, f_auto,
+// q_auto, c_limit. A segment with no such token is a folder, and CONTENT_PATHS does
+// not list them all: `interior/` (4.2k assets), `designereditions/`, `blog/`, `tina/`.
+// Without this check the folder name is absorbed into the transform list, so the
+// original key loses it and the Cloudinary URL comes out malformed —
+// `e_trim/w_600,interior/foo.png`, which 404s.
+const isTransformComponent = (s) => s.split(',').every(t => /^[a-z]{1,3}_./.test(t));
 
 // Parse path into { base, transforms[], contentPath }
 // Input: ['dfgbpib38', 'image', 'upload', 'e_trim', 'w_200', 'f_auto', 'media', 'catalog', ...]
@@ -80,7 +87,7 @@ const parsePath = (segments) => {
     let contentStart = 0;
 
     for (let i = 0; i < rest.length; i++) {
-        if (CONTENT_PATHS.has(rest[i]) || isVersion(rest[i]) || isAssetFile(rest[i])) {
+        if (CONTENT_PATHS.has(rest[i]) || isVersion(rest[i]) || isAssetFile(rest[i]) || !isTransformComponent(rest[i])) {
             contentStart = i;
             break;
         }
@@ -210,11 +217,14 @@ const originalKey = (parsed) => {
     return path ? parsed.base + '/' + path : null;
 };
 
-// Only these four appear in the 136 transform combinations the cache has ever
-// held. Anything else must go to Cloudinary rather than be silently dropped —
-// ignoring an unrecognised transform would cache a wrong render under a correct
-// URL, which is exactly how the two previous wrong-bytes incidents happened.
-const LOCAL_TRANSFORMS = /^(e_trim|c_limit|f_auto|w_\d+)$/;
+// These cover all but ~140 of the 70k derived keys in the cache. `q_auto` is a
+// no-op for the same reason as f_auto — it only asks the CDN to pick a quality, and
+// sharp's default encode is an acceptable stand-in, so dimensions still match.
+// Everything else (notably `c_scale`, ~139 keys, which resizes without preserving
+// aspect) must go to Cloudinary rather than be silently dropped: ignoring an
+// unrecognised transform would cache a wrong render under a correct URL, which is
+// exactly how the two previous wrong-bytes incidents happened.
+const LOCAL_TRANSFORMS = /^(e_trim|c_limit|f_auto|q_auto|w_\d+)$/;
 const canRenderLocally = (transforms) => transforms.every(t => LOCAL_TRANSFORMS.test(t));
 
 // Render a derived image from the mirrored original so a cache miss no longer
