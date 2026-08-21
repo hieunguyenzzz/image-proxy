@@ -2,6 +2,7 @@ const { Hono } = require('hono');
 const { serve } = require('@hono/node-server');
 const { S3Client, HeadObjectCommand, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { NodeHttpHandler } = require('@smithy/node-http-handler');
+const sharp = require('sharp');
 const { Readable } = require('stream');
 const http = require('http');
 const https = require('https');
@@ -141,6 +142,14 @@ const getObject = async (key) => {
     return { body: Body, contentType: ContentType };
 };
 
+const getObjectBuffer = async (key) => {
+    const { body } = await getObject(key);
+    const stream = body instanceof Readable ? body : Readable.fromWeb(body);
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    return Buffer.concat(chunks);
+};
+
 const putObject = async (key, buffer, contentType) => {
     await s3.send(new PutObjectCommand({
         Bucket: BUCKET,
@@ -188,6 +197,47 @@ const buildCloudinaryUrl = (parsed, rawSegments) => {
     if (rest.length > 0) components.push(rest.join(','));
 
     return 'https://res.cloudinary.com/' + [base, ...components, contentPath].join('/');
+};
+
+// The mirrored original sits at the content path with no transformation component
+// (see scripts/mirror-cloudinary.js). parsePath folds a `v1686913543` version
+// segment into contentPath, so strip it — otherwise a versioned request never
+// matches the mirrored key and falls through to Cloudinary for nothing.
+const originalKey = (parsed) => {
+    if (!parsed || !parsed.contentPath) return null;
+    const segments = parsed.contentPath.split('/');
+    const path = isVersion(segments[0]) ? segments.slice(1).join('/') : parsed.contentPath;
+    return path ? parsed.base + '/' + path : null;
+};
+
+// Only these four appear in the 136 transform combinations the cache has ever
+// held. Anything else must go to Cloudinary rather than be silently dropped —
+// ignoring an unrecognised transform would cache a wrong render under a correct
+// URL, which is exactly how the two previous wrong-bytes incidents happened.
+const LOCAL_TRANSFORMS = /^(e_trim|c_limit|f_auto|w_\d+)$/;
+const canRenderLocally = (transforms) => transforms.every(t => LOCAL_TRANSFORMS.test(t));
+
+// Render a derived image from the mirrored original so a cache miss no longer
+// needs Cloudinary. Trim runs as its own pass before the resize, matching the
+// order buildCloudinaryUrl forces for the same reason: trim -> resize is what the
+// request path asked for, and the reverse crops the whitespace away after the
+// resize and returns far less than the requested width.
+//
+// `withoutEnlargement` is what keeps this safe. c_limit means exactly that, and
+// never upscaling is what stops a repeat of the incident where a w_600 built from
+// a 200px copy was cached immutable for a year. f_auto is a no-op: toBuffer()
+// keeps the source format, and the Content-Type is derived from the extension
+// anyway, so the two stay consistent.
+const transformLocally = async (buffer, transforms) => {
+    let bytes = buffer;
+    if (transforms.includes('e_trim')) {
+        bytes = await sharp(bytes, { failOn: 'none' }).trim().toBuffer();
+    }
+    const width = transforms.map(t => t.match(/^w_(\d+)$/)).find(Boolean);
+    if (!width) return bytes;
+    return sharp(bytes, { failOn: 'none' })
+        .resize({ width: parseInt(width[1], 10), withoutEnlargement: true })
+        .toBuffer();
 };
 
 // Instagram gallery photos predating the Cloudinary uploads live only behind the
@@ -265,26 +315,46 @@ app.get('/api/images/*', async (c) => {
         }
     }
 
-    const url = instagramUpstream(imageFile) || buildCloudinaryUrl(parsed, imageFile);
+    const instagramUrl = instagramUpstream(imageFile);
+    const url = instagramUrl || buildCloudinaryUrl(parsed, imageFile);
     let imageBuffer = null;
 
+    // Render from the mirrored original in R2 before paying Cloudinary. The account
+    // is over its plan quota, so any miss that the mirror can serve must not leave
+    // the network. This derives from the full original, never from a derived cache
+    // entry, so the upscaling trap above does not apply.
+    const origKey = instagramUrl ? null : originalKey(parsed);
+    if (origKey && !keys.includes(origKey) && canRenderLocally(parsed.transforms)) {
+        try {
+            if (await objectExists(origKey)) {
+                imageBuffer = await transformLocally(await getObjectBuffer(origKey), parsed.transforms);
+                console.log('rendered locally from ' + origKey);
+            }
+        } catch (err) {
+            console.log('local render failed for ' + origKey + ': ' + err.message);
+            imageBuffer = null;
+        }
+    }
+
     // Try Cloudinary first, then ImageKit for uploads/ paths
-    try {
-        console.log('downloading ' + url);
-        imageBuffer = await downloadImage(url);
-    } catch (err) {
-        // If Cloudinary fails and path starts with uploads/, try ImageKit
-        if (parsed && parsed.contentPath.startsWith('uploads/')) {
-            try {
-                const uploadParts = parsed.contentPath.split('/');
-                const alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [uploadParts[0], uploadParts[1]].join('/') + '?tr=' + imagekitAttributes.join(',');
-                console.log('fallback to imagekit: ' + alternativeUrl);
-                imageBuffer = await downloadImage(alternativeUrl);
-            } catch (err2) {
+    if (!imageBuffer) {
+        try {
+            console.log('downloading ' + url);
+            imageBuffer = await downloadImage(url);
+        } catch (err) {
+            // If Cloudinary fails and path starts with uploads/, try ImageKit
+            if (parsed && parsed.contentPath.startsWith('uploads/')) {
+                try {
+                    const uploadParts = parsed.contentPath.split('/');
+                    const alternativeUrl = 'https://ik.imagekit.io/tg3wenekj/' + [uploadParts[0], uploadParts[1]].join('/') + '?tr=' + imagekitAttributes.join(',');
+                    console.log('fallback to imagekit: ' + alternativeUrl);
+                    imageBuffer = await downloadImage(alternativeUrl);
+                } catch (err2) {
+                    console.log('can not download ' + url);
+                }
+            } else {
                 console.log('can not download ' + url);
             }
-        } else {
-            console.log('can not download ' + url);
         }
     }
 
@@ -317,7 +387,13 @@ const warmup = async () => {
 };
 
 const port = parseInt(process.env.PORT || '3000');
-warmup().then(() => {
-    console.log(`Starting image proxy on port ${port}`);
-    serve({ fetch: app.fetch, port });
-});
+// Guarded so the transform helpers can be required directly by
+// scripts/check-transform-parity.js without starting a listener.
+if (require.main === module) {
+    warmup().then(() => {
+        console.log(`Starting image proxy on port ${port}`);
+        serve({ fetch: app.fetch, port });
+    });
+}
+
+module.exports = { parsePath, originalKey, canRenderLocally, transformLocally, buildCloudinaryUrl };
