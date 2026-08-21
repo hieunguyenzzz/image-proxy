@@ -76,6 +76,17 @@ If exact parity is ever needed, the full-size `e_trim` cache entries hold Cloudi
 own trim output and could be used as the resize source — but that would mean deriving
 from a cache entry, which the rule below forbids, so it needs a deliberate decision.
 
+Thumbor was measured as an alternative renderer and is **worse**, so don't reach for it
+again: against Cloudinary's height, `thumbor /unsafe/trim/1440x0/` came out 23% short on
+`0v8a3233.png` (1489 vs 1931) and 76% short on `1070-3_1903x.png` (591 vs 2494), where
+sharp is 4% and 11% short respectively.
+
+The mirror must be sourced from Cloudinary, not from `old.mobelaris.com`, even though
+`transformImageUrl` in the Medusa backend implies Magento holds the originals. Same
+dimensions and channel count, but the decoded pixels differ on 3 of 4 sampled assets
+(`1070-3_1903x.png` was the only identical one), so Magento copies would change what
+the site serves.
+
 `e_trim` runs as its own sharp pass before the resize, for the same reason
 `buildCloudinaryUrl` gives it its own transformation component: trim → resize is what
 the request asked for, and the reverse returns far less than the requested width.
