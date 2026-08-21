@@ -2,4 +2,9 @@ node_modules
 .env
 .env.*
 .DS_Store
-scripts/
+# sync-swatchs.js and sync-uploads.js have credentials hardcoded and target the
+# retired MinIO bucket, so scripts/ stays ignored by default. Track only the
+# scripts that read their credentials from the environment.
+scripts/*
+!scripts/mirror-cloudinary.js
+!scripts/check-transform-parity.js
